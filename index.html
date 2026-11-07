@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Poker Night</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>♠ <span>Poker</span> Night</h1>
+    <div class="sub">No-limit Texas Hold'em</div>
+  </header>
+
+  <main class="layout">
+    <section>
+      <!-- The table. Seats and bet chips are added here by game.js -->
+      <div class="table-wrap" id="tableWrap">
+        <div class="felt">
+          <div class="center">
+            <div class="pot hidden" id="pot"><span class="pot-icon"></span>Pot <b id="potAmt">0</b></div>
+            <div class="board" id="board"></div>
+            <div class="message" id="message">Press “Deal” to start</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Your controls -->
+      <div class="controls">
+        <div class="controls-top">
+          <div class="myhand" id="myHand"></div>
+          <button class="btn deal" id="btnDeal">Deal</button>
+        </div>
+        <div class="actions">
+          <button class="btn fold" id="btnFold" disabled>Fold</button>
+          <button class="btn call" id="btnCall" disabled>Check</button>
+          <div class="raise-box" id="raiseBox">
+            <div class="quick">
+              <button data-q="0.5" disabled>½ Pot</button>
+              <button data-q="0.75" disabled>¾ Pot</button>
+              <button data-q="1" disabled>Pot</button>
+              <button data-q="all" disabled>All-in</button>
+            </div>
+            <div class="raise-row">
+              <input type="range" id="raiseSlider" min="0" max="0" value="0" disabled>
+              <input type="number" id="raiseInput" min="0" disabled>
+            </div>
+            <button class="btn raise" id="btnRaise" disabled>Raise</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel">
+        <h2>Players</h2>
+        <ul class="roster" id="roster"></ul>
+        <div class="add-bot">
+          <select id="botSelect"></select>
+          <button class="btn small" id="btnAddBot">Add bot</button>
+        </div>
+        <p class="hint" id="botDesc"></p>
+      </div>
+
+      <div class="panel">
+        <h2>Settings</h2>
+        <label>Blinds
+          <select id="optSb">
+            <option value="5">5 / 10</option>
+            <option value="10" selected>10 / 20</option>
+            <option value="25">25 / 50</option>
+            <option value="50">50 / 100</option>
+          </select>
+        </label>
+        <label>Starting chips
+          <select id="optStack">
+            <option value="500">500</option>
+            <option value="1000" selected>1,000</option>
+            <option value="2000">2,000</option>
+            <option value="5000">5,000</option>
+          </select>
+        </label>
+        <label>Bot speed
+          <select id="optSpeed">
+            <option value="0.3">Fast</option>
+            <option value="1" selected>Normal</option>
+            <option value="1.8">Slow</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="optAuto"> Auto-deal next hand</label>
+        <label class="check"><input type="checkbox" id="optRebuy" checked> Bots rebuy when busted</label>
+      </div>
+
+      <div class="panel log-panel">
+        <h2>Log</h2>
+        <ul class="log" id="log"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Order matters: game.js uses functions from the other two -->
+  <script src="poker.js"></script>
+  <script src="bots.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
