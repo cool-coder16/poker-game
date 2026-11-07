@@ -213,7 +213,7 @@ $('authGoogle').onclick = () => runAuth(() => window.pokerAuth.google());
 
 $('authForgot').onclick = () => {
   const id = $('authId').value.trim();
-  if (!id) { showAuthMessage('Type your username (or email) above first, then click "Forgot password?".'); return; }
+  if (!id) { showAuthMessage('Type your username above first, then click "Forgot password?".'); return; }
   runAuth(async () => {
     await window.pokerAuth.resetPassword(id);
     // Same wording whether or not the account exists, so this can't be used to probe for accounts

@@ -42,12 +42,6 @@ async function lookupEmail(name) {
   return snap.exists() ? snap.data().email : null;
 }
 
-// What people type when signing in: an email (has "@") or a username
-async function resolveEmail(idOrEmail) {
-  const id = idOrEmail.trim();
-  return id.includes('@') ? id : lookupEmail(id);
-}
-
 // Saves the username claim AND the profile in one batch: both succeed or neither does.
 // Rules only allow *creating* a usernames doc, so if someone grabbed the name first, this fails.
 async function saveUsername(user, name, stats, extra = {}) {
@@ -106,8 +100,9 @@ window.pokerAuth = {
     }
   },
 
-  async signIn(idOrEmail, password) {
-    const email = await resolveEmail(idOrEmail);
+  // Sign-in is username + password only. The email is looked up behind the scenes.
+  async signIn(username, password) {
+    const email = await lookupEmail(username.trim());
     if (!email) throw appError('auth/invalid-credential');   // same message as a wrong password
     await signInWithEmailAndPassword(auth, email, password);
   },
@@ -115,8 +110,8 @@ window.pokerAuth = {
   google: () => signInWithPopup(auth, new GoogleAuthProvider()),
   signOut: () => signOut(auth),
 
-  async resetPassword(idOrEmail) {
-    const email = await resolveEmail(idOrEmail);
+  async resetPassword(username) {
+    const email = await lookupEmail(username.trim());
     if (email) await sendPasswordResetEmail(auth, email);
     // Unknown username: say nothing different, so the message is the same either way
   },

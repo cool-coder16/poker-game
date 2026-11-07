@@ -24,9 +24,9 @@
       <button type="button" id="tabUp">Create account</button>
     </div>
     <form id="authForm">
-      <!-- Sign in shows "Username or email"; Create account shows Username + Email.
+      <!-- Sign in shows Username only; Create account shows Username + Email.
            account.js swaps the rows (and their "required" flags) in setAuthMode. -->
-      <label id="idRow">Username or email
+      <label id="idRow">Username
         <input id="authId" required autocomplete="username" autocapitalize="none" spellcheck="false">
       </label>
       <label id="nameRow" class="hidden">Username
