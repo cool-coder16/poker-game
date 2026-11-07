@@ -266,6 +266,7 @@ function tutorialDecision(ctx) {
 
 // Which message to show when a hand ends because someone folded
 function foldStepKey(winner) {
+  if (!tutorial) return null;   // no lesson running (runs and practice call this too)
   const steps = currentLessonHand().steps;
   const key = winner.isHuman ? 'rexFolds' : 'youFold';
   return steps[key] ? key : 'fold';

@@ -16,10 +16,11 @@ function makeDeck() {
   return deck;
 }
 
-// Fisher-Yates shuffle (in place)
-function shuffle(arr) {
+// Fisher-Yates shuffle (in place). `rng` returns a number in [0, 1); multiplayer passes a
+// stronger random source (see secureRandom in room-net.js) instead of the default Math.random.
+function shuffle(arr, rng = Math.random) {
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;

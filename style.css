@@ -462,3 +462,19 @@ table.lb tr.waiting td { opacity: 0.5; }
 .run-result { margin: 0 0 16px; color: var(--muted); font-size: 0.85rem; min-height: 1.2em; }
 .run-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .run-actions a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* ---------- Online rooms ---------- */
+.lobby-head { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 14px; }
+.lobby-head .hint { flex-basis: 100%; margin: 0; }
+.code-big { font-size: 3rem; font-weight: 800; letter-spacing: 0.25em; color: var(--gold); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.room-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.lobby-footer { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.lobby-footer .hint { margin: 0; }
+.panel h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.join-form { display: flex; gap: 8px; }
+.join-form input { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: #0e131e; color: var(--text); font: inherit; font-size: 1.3rem; letter-spacing: 0.3em; text-transform: uppercase; text-align: center; }
+.join-form input:focus { outline: 2px solid var(--gold); outline-offset: -1px; }
+.error-line { margin: 12px 0 0; min-height: 1.3em; color: #ff6b7d; text-align: center; font-size: 0.9rem; }
+.hint.center { text-align: center; }
+.turn-timer { margin-top: 6px; color: var(--gold); font-weight: 700; font-size: 0.9rem; min-height: 1.2em; }
