@@ -48,6 +48,16 @@ So when the dealer leaves, or disappears, another player can carry on from that 
 - `arenas/<window id>/tables/<code>`: each arena table's own running scores. The Arena page adds them up
   (`aggregateArena` in `arena.js`).
 
+## Arena results and your rating
+
+- When you sit down at an arena table, the room page marks that Arena as played (`arenaPlayed/<uid>/<id>`,
+  readable only by you).
+- After an Arena ends (plus a 5-minute grace period), the next time you open the site `arena-rating.js` totals
+  that Arena's standings, works out your place (`arenaResult` in `arena.js`) and adds the points to your
+  profile and rating. Each Arena is counted once (`profile.arenaDone`).
+- Top 3 earn 3 / 2 / 1 rating points, but only if you played at least 2 rounds and at least 3 players did.
+- Like the weekly season, this is worked out in your own browser: honor system until a server does it.
+
 ## Changing the backend later
 
 - **Different database, same idea:** write a new store file with the small interface in `store-memory.js`
@@ -64,7 +74,7 @@ So when the dealer leaves, or disappears, another player can carry on from that 
   read them (`roomPrivate/`). Arena standings run on the honor system until a server deals.
 - If the dealer vanishes and nobody else is at the table, the table is gone.
 - The free database allows about 100 players connected at once. Plenty for friends.
-- Not built yet: spectators, chat, bots at open/arena tables, Arena points feeding the rating.
+- Not built yet: spectators, chat, bots at open/arena tables.
 
 ## Security rules
 
@@ -78,9 +88,9 @@ the code; a seated player may take over a dealer who is truly disconnected.
 
 ```
 node tests/engine.test.js     the poker rules (13 tests, including 3,000 random hands)
-node tests/arena.test.js      the Arena rules (windows, points, ties, standings)
-node tests/room.test.js       whole tables on the in-memory store (18 tests: privacy, timeouts, disconnects,
-                              dealer handoff, open tables, rebuys, arena rounds, the public list)
+node tests/arena.test.js      the Arena rules (windows, points, ties, standings, rating points)
+node tests/room.test.js       whole tables on the in-memory store (19 tests: privacy, timeouts, disconnects,
+                              dealer handoff, open tables, rebuys, arena rounds, arena ratings, the public list)
 ```
 
 Try the table UI with no network or friends:

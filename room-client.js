@@ -103,6 +103,7 @@ async function joinRoom() {
     await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: Date.now() });
   }
   await watchEverything();
+  if (meta.arena) net.markArenaPlayed(meta.arena).catch(() => {});   // so the site counts this Arena toward your rating later
   // I'm the dealer. A private room that was already running (I refreshed) resumes; open and arena tables start or resume.
   if (meta.host === myId && (isContinuous(meta) || meta.status === 'playing')) await startOrResumeHost();
 }

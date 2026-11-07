@@ -26,12 +26,15 @@ let signingUp = false;   // true while signUp() runs, so onAuthStateChanged does
 // ---------- What we store about a player (users/<uid>) ----------
 // Lifetime: handsPlayed, handsWon, biggestPot, high (best run score ever).
 // This season: season (id), sHands, sWins, sBb (net big blinds won), runs (finished), best (best run score).
-// Rating: points, seasons (played), bestRank, history (last 12 season results).
+// Rating: points (everything added together), seasons (played), bestRank, history (last 12 season results).
+// Arena: arenaPoints (the part of `points` that came from Arenas), arenas (counted), arenaBest (best place),
+// arenaDone (the newest Arena already totalled up), arenaLog (last 8 results).
 function zeroStats(season) {
   return {
     handsPlayed: 0, handsWon: 0, biggestPot: 0, high: 0,
     season, sHands: 0, sWins: 0, sBb: 0, runs: 0, best: 0,
     points: 0, seasons: 0, bestRank: 0, history: [],
+    arenaPoints: 0, arenas: 0, arenaBest: 0, arenaDone: '', arenaLog: [],
   };
 }
 

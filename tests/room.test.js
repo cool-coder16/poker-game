@@ -3,7 +3,7 @@
 const assert = require('assert');
 const { load, seeded } = require('./helpers');
 if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
-load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js', 'arena.js');
+load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js', 'arena.js', 'arena-rating.js');
 
 let passed = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -390,6 +390,33 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
   });
 
   // ---------------------------------------------------------------- arena
+  await test('arena ratings: finished arenas are totalled once, recent ones wait, and points are added to the rating', async () => {
+    const hub = createMemoryHub();
+    const me = createRoomNet(hub.store('me'));
+    const other = createRoomNet(hub.store('other'));
+    const score = (points, rounds) => ({ name: 'x', points, rounds, wins: 0 });
+    // Arena 1 (long ago): I won, 3 qualified players -> 3 points. Arena 2: I was 3rd of 4 -> 1 point.
+    // Arena 3: only two qualified players -> counted but 0 points. Arena 4: just finished (too recent). Arena 5: I never played.
+    await other.publishArenaTable('20260101-1000', 'T1', { host: 'h', updated: 1, scores: { me: score(30, 3), p2: score(20, 3), p3: score(10, 3) } });
+    await other.publishArenaTable('20260101-1030', 'T1', { host: 'h', updated: 1, scores: { a: score(30, 3), b: score(20, 3), me: score(10, 3), d: score(4, 3) } });
+    await other.publishArenaTable('20260101-1100', 'T1', { host: 'h', updated: 1, scores: { me: score(30, 3), b: score(20, 3) } });
+    await other.publishArenaTable('20260101-1130', 'T1', { host: 'h', updated: 1, scores: { me: score(30, 3), b: score(20, 3), c: score(10, 3) } });
+    for (const id of ['20260101-1000', '20260101-1030', '20260101-1100', '20260101-1130']) await me.markArenaPlayed(id);
+    const profile = { points: 100, arenaPoints: 0, arenas: 0, arenaBest: 0, arenaDone: '', arenaLog: [] };
+    const now = arenaEndOf('20260101-1130') + 60000;          // 1 minute after the last one ended: not settled yet
+    assert.strictEqual(await settleArenaRatings(me, 'me', profile, now), true);
+    assert.deepStrictEqual({ p: profile.points, ap: profile.arenaPoints, n: profile.arenas, best: profile.arenaBest, done: profile.arenaDone },
+      { p: 104, ap: 4, n: 3, best: 1, done: '20260101-1100' });   // the 11:30 arena is still too recent
+    assert.deepStrictEqual(profile.arenaLog.map(l => [l.id, l.rank, l.of, l.points]),
+      [['20260101-1100', 1, 2, 0], ['20260101-1030', 3, 4, 1], ['20260101-1000', 1, 3, 3]]);
+    // Running it again changes nothing (each Arena counts once)
+    assert.strictEqual(await settleArenaRatings(me, 'me', profile, now), false);
+    // Later, the last arena is final and gets counted: 1st of 3 -> 3 points
+    assert.strictEqual(await settleArenaRatings(me, 'me', profile, now + 10 * 60000), true);
+    assert.strictEqual(profile.points, 107);
+    assert.strictEqual(profile.arenaDone, '20260101-1130');
+  });
+
   await test('arena: rounds are scored, points add up, and the arena ends at its end time', async () => {
     const room = await setupRoom({ humans: ['ann', 'ben', 'cat'], meta: { mode: 'arena', status: 'playing', arena: 'T-1', roundHands: 3, startChips: 1000, maxSeats: 6, arenaEnd: Date.now() + 6000 }, timing: { roundPauseMs: 0 } });
     ['ann', 'ben', 'cat'].forEach((u, i) => simPlayer(room, u, { seed: 90 + i }));

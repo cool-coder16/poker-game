@@ -10,6 +10,14 @@ const ARENA_MINUTES = 30;
 const ARENA_ROUND_HANDS = 10;      // hands per round
 const ARENA_HANDS_PER_LEVEL = 3;   // the blinds step up every 3 hands inside a round
 
+// Rating points: the top 3 of a finished Arena earn 3 / 2 / 1. To count you must have played at least 2 rounds,
+// and the Arena needs at least 3 such players (so nobody can farm points alone). They are small on purpose:
+// there are 48 Arenas a day, while winning a weekly season is worth 100.
+const ARENA_RATING_POINTS = [3, 2, 1];
+const ARENA_MIN_ROUNDS = 2;
+const ARENA_MIN_PLAYERS = 3;
+const ARENA_SETTLE_DELAY_MS = 5 * 60000;   // wait this long after an Arena ends so late round scores are in
+
 const pad2 = n => String(n).padStart(2, '0');
 
 // The arena window containing `date`: { id: '20261107-1930', start, end } (start/end are ms since 1970)
@@ -61,4 +69,25 @@ function aggregateArena(tables) {
     });
   });
   return Object.values(totals).sort((a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name));
+}
+
+// When the Arena with this id ends (ms since 1970), or Infinity if the id is not valid
+function arenaEndOf(id) {
+  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(String(id));
+  if (!m) return Infinity;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) + ARENA_MINUTES * 60000;
+}
+
+// Is it long enough after the end of this Arena that its scores are final?
+const arenaSettled = (id, now = Date.now()) => now >= arenaEndOf(id) + ARENA_SETTLE_DELAY_MS;
+
+// How did `uid` do in a finished Arena? tables = the Arena's tables (see aggregateArena).
+// -> { counted, rank, of, points }. Players with equal points share a place.
+function arenaResult(tables, uid) {
+  const qualified = aggregateArena(tables).filter(r => r.rounds >= ARENA_MIN_ROUNDS);
+  const mine = qualified.find(r => r.uid === uid);
+  if (!mine) return { counted: false, rank: 0, of: qualified.length, points: 0 };
+  const rank = 1 + qualified.filter(r => r.points > mine.points).length;
+  const points = qualified.length >= ARENA_MIN_PLAYERS ? (ARENA_RATING_POINTS[rank - 1] || 0) : 0;
+  return { counted: true, rank, of: qualified.length, points };
 }

@@ -12,6 +12,7 @@
 //   roomHost/<code>          the host's saved table, so a refreshed host can carry on (host only)
 //   lobby/<code>             the public list of open and arena tables (the host refreshes it every ~20s)
 //   arenas/<id>/tables/<code>  one arena table's running scores (the host writes them)
+//   arenaPlayed/<uid>/<id>   Arenas this player sat down in (only they can read or write it): so the site knows which to total up
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I: easy to read out loud
 
@@ -114,6 +115,9 @@ function createRoomNet(store) {
 
     // Arena scores: every table publishes its own, and the standings add them up (see arena.js)
     publishArenaTable: (arenaId, code, data) => store.set(`arenas/${arenaId}/tables/${code}`, data),
+    markArenaPlayed: arenaId => store.set(`arenaPlayed/${store.uid}/${arenaId}`, true),
+    getArenaPlayed: () => store.get(`arenaPlayed/${store.uid}`),
+    getArena: arenaId => store.get(`arenas/${arenaId}/tables`),
     watchArena: (arenaId, cb) => store.watch(`arenas/${arenaId}/tables`, all => cb(all || {})),
 
     // After a game: back to the lobby, with the old table thrown away (host only)

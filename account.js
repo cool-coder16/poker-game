@@ -19,6 +19,12 @@ window.onAuthChanged = async (user, prof) => {
   authKnown = true;
   renderAuthBar();
   authListeners.forEach(fn => fn(user, prof));
+  // Count any Arenas that finished since your last visit (arena-rating.js; only the pages that load it do this)
+  if (user && prof && typeof settleArenas === 'function') {
+    settleArenas()
+      .then(changed => { if (changed) authListeners.forEach(fn => fn(currentUser, profile)); })   // redraw with the new rating
+      .catch(err => console.error('Could not count Arena results', err));
+  }
   // Google users pick a username (but don't interrupt the tutorial; `tutorial` only exists on play.html)
   const inTutorial = typeof tutorial !== 'undefined' && tutorial;
   if (user && !prof.username && !inTutorial) openNameDialog();
