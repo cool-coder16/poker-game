@@ -1,16 +1,20 @@
-// room-client.js — the room page: a lobby while players gather, then the live table.
-// It never runs the game itself (room-host.js does that, in the host's browser). It watches the
+// room-client.js — the room page: a lobby while players gather (private rooms), then the live table.
+// It never runs the game itself (room-host.js does that, in the dealer's browser). It watches the
 // room through room-net.js, draws the table with table-ui.js, and sends your moves back.
 //
-// room.html?code=ABCDE  joins a real room.   room.html?local  is a one-tab demo with bots (no network).
+// room.html?code=ABCDE        joins a real room, open table or arena table.
+// room.html?local             one-tab demo of a private room (with bots, no network).
+// room.html?local=open|arena  one-tab demo of an open table / arena table.
 //
 // Remember: the database drops empty arrays, so anything that might be empty is read with `|| []`.
 
 const roomParams = new URLSearchParams(location.search);
 const LOCAL = roomParams.has('local');
 const MAX_ROOM_SEATS = 8;
+const CLAIM_DELAY_MS = 12000;   // how long the dealer must be gone before another player takes over
 const SEAT_COLORS = ['#2f8f5b', '#c4572b', '#2b6fc4', '#8e5bd6', '#d6a52b', '#2bb5c4', '#d62b7a', '#6b7a90'];
 const colorFor = uid => SEAT_COLORS[[...uid].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % SEAT_COLORS.length];
+const isContinuous = meta => Boolean(meta) && (meta.mode === 'open' || meta.mode === 'arena');   // no lobby, people come and go
 
 let code = '';
 let net = null;
@@ -19,6 +23,8 @@ let roomData = null;        // everything public about the room: { meta, seats, 
 let myPrivate = null;       // { handNo, hole } my two cards, readable only by me
 let isHost = false;
 let hostCtl = null;         // the dealer (room-host.js) if I'm the host
+let hostStarting = false;   // true while the dealer is being set up, so we never start two
+let claimTimer = null;      // set when the dealer has gone: we will take over if they don't come back
 let wasSeated = false;
 let controlsSeq = -1;       // the state number my controls were last set up for
 let answeredSeq = -1;       // the state number I already sent a move for
@@ -57,7 +63,7 @@ function boot() {
     opt.textContent = `${p.avatar} ${p.label}`;
     $('botSelect').appendChild(opt);
   });
-  setInterval(tickTimer, 250);
+  setInterval(tick, 250);
 
   if (LOCAL) return startLocal();
   code = normalizeCode(roomParams.get('code'));
@@ -87,31 +93,39 @@ function friendlyRoomError(err) {
 async function joinRoom() {
   const data = await net.getRoom(code);
   if (!data || !data.meta) return problem('Room not found', `There is no room with the code ${code}. Check it and try again.`, backToRooms);
+  const meta = data.meta;
   const seated = data.seats && data.seats[myId];
   if (!seated) {
-    if (data.meta.status !== 'lobby') return problem('That game has already started', 'Ask the host to make a new room.', backToRooms);
-    const count = Object.keys(data.seats || {}).length + Object.keys(data.bots || {}).length;
-    if (count >= MAX_ROOM_SEATS) return problem('That room is full', `Rooms hold up to ${MAX_ROOM_SEATS} players.`, backToRooms);
+    if (meta.status === 'finished') return problem('That table has closed', 'The game there is over.', backToRooms);
+    if (meta.status !== 'lobby' && !isContinuous(meta)) return problem('That game has already started', 'Ask the host to make a new room.', backToRooms);
+    const count = Object.keys(data.seats || {}).length + (isContinuous(meta) ? 0 : Object.keys(data.bots || {}).length);
+    if (count >= (meta.maxSeats || MAX_ROOM_SEATS)) return problem('That table is full', 'Try another table.', backToRooms);
     await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: Date.now() });
   }
   await watchEverything();
-  // I'm the host and the game was already running (I refreshed): pick up where the table was
-  if (data.meta.host === myId && data.meta.status === 'playing') await resumeHost(data);
+  // I'm the dealer. A private room that was already running (I refreshed) resumes; open and arena tables start or resume.
+  if (meta.host === myId && (isContinuous(meta) || meta.status === 'playing')) await startOrResumeHost();
 }
 
-// One-tab demo: you are the host of a room that already has two bots in it
+// One-tab demo. ?local = private room, ?local=open or ?local=arena = a table where you are the dealer. Bots keep you company.
 async function startLocal() {
+  const kind = roomParams.get('local');   // '' | 'open' | 'arena'
   const hub = createMemoryHub();
   net = createRoomNet(hub.store('you'));
   myId = 'you';
   myName = typeof profile !== 'undefined' && profile ? profile.displayName : 'You';
-  code = await net.createRoom({ hostName: myName, startChips: 1000, sb: 10, turnSeconds: 30, rising: false, handsPerLevel: 10, allowBots: true });
+  const rounds = Number(roomParams.get('rounds'));   // ?local=arena&rounds=3 makes rounds short, handy for trying it out
+  const meta = kind
+    ? { ...tableMeta(kind, myName, rounds >= 2 ? { roundHands: rounds } : {}), allowBots: true }
+    : { hostName: myName, startChips: 1000, sb: 10, turnSeconds: 30, rising: false, handsPerLevel: 10, allowBots: true };
+  code = await net.createRoom(meta);
   await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: 1 });
   await net.setBots(code, {
     b1: { key: 'shark', name: BOT_PROFILES.shark.names[0] },
     b2: { key: 'fox', name: BOT_PROFILES.fox.names[0] },
   });
   await watchEverything();
+  if (kind) await startOrResumeHost();
 }
 
 async function watchEverything() {
@@ -120,7 +134,44 @@ async function watchEverything() {
   net.watchRoom(code, r => { roomData = r; render(); });
 }
 
+// ---------- Being the dealer ----------
+function launchHost(meta, seats, bots, resume) {
+  hostCtl = createRoomHost({ net, code, meta, seats, bots, resume });
+  hostCtl.run().catch(err => { console.error(err); $('roomNote').textContent = 'The game stopped because of an error: ' + err.message; });
+}
+
+// Start dealing: carry on from the saved table if there is one, or (open and arena tables) begin a new one
+async function startOrResumeHost() {
+  if (hostCtl || hostStarting) return;
+  hostStarting = true;
+  try {
+    const fresh = await net.getRoom(code);
+    const saved = await net.loadHostState(code);
+    if (saved && saved.table && saved.status !== 'finished') launchHost(fresh.meta, fresh.seats, fresh.bots, saved);
+    else if (isContinuous(fresh.meta) && fresh.meta.status !== 'finished') launchHost(fresh.meta, fresh.seats, fresh.bots, null);
+    else $('roomNote').textContent = "The saved game couldn't be restored. Leave and make a new room.";
+  } finally { hostStarting = false; }
+}
+
+// If the dealer has gone, a seated player takes over after a pause. The database rules only allow this
+// when the dealer really is disconnected. The new dealer carries on from the table the old one saved.
+function watchTheDealer(meta, seated) {
+  const dealerGone = !isHost && seated && meta.status === 'playing' && !(roomData.presence || {})[meta.host];
+  if (dealerGone && !claimTimer) {
+    claimTimer = setTimeout(async () => {
+      claimTimer = null;
+      if (!roomData || (roomData.presence || {})[roomData.meta.host]) return;   // they came back
+      try { await net.setHost(code, myId); } catch (err) { /* someone else got there first */ }
+    }, CLAIM_DELAY_MS + Math.random() * 3000);   // a little random, so players don't all try at once
+  } else if (!dealerGone && claimTimer) {
+    clearTimeout(claimTimer);
+    claimTimer = null;
+  }
+}
+
 // ---------- Drawing ----------
+const MODE_TITLES = { open: 'Open table ', arena: 'Arena table ' };
+
 function render() {
   if (!roomData || !roomData.meta) {
     if (wasSeated) problem('This room was closed', 'The host closed the room.', backToRooms);
@@ -128,11 +179,16 @@ function render() {
   }
   const meta = roomData.meta;
   isHost = meta.host === myId;
-  $('pageSub').textContent = LOCAL ? 'Local demo' : 'Room ' + code;
+  $('pageSub').textContent = LOCAL ? 'Local demo' : (MODE_TITLES[meta.mode] || 'Room ') + code;
   const seated = Boolean(roomData.seats && roomData.seats[myId]);
   if (seated) wasSeated = true;
   else if (wasSeated) return problem('You were removed from the room', 'The host removed you from this room.', backToRooms);
   else return;
+
+  // Dealing duties follow meta.host: take them up when named, drop them when someone else is
+  if (hostCtl && !isHost) { hostCtl.stop(); hostCtl = null; }
+  if (isHost && !hostCtl && !hostStarting && meta.status !== 'lobby' && meta.status !== 'finished') startOrResumeHost();
+  watchTheDealer(meta, seated);
 
   if (meta.status === 'lobby') {
     if (overShown) { overShown = false; $('roomOver').close(); }
@@ -208,7 +264,7 @@ function renderLobby() {
   $('btnLeaveLobby').textContent = isHost ? 'Close room' : 'Leave room';
 }
 
-// ---------- Lobby actions ----------
+// ---------- Lobby actions (private rooms) ----------
 const randomId = () => Math.random().toString(36).slice(2, 7);
 
 async function addLobbyBot() {
@@ -238,25 +294,14 @@ function optionChanged() {
 
 async function startGame() {
   $('btnStart').disabled = true;
-  const r = await net.getRoom(code);
-  const total = Object.keys(r.seats || {}).length + Object.keys(r.bots || {}).length;
-  if (total < 2) { $('btnStart').disabled = false; return; }
-  await net.updateMeta(code, { status: 'playing' });
-  launchHost({ ...r.meta, status: 'playing' }, r.seats, r.bots, null);
-}
-
-function launchHost(meta, seats, bots, resume) {
-  hostCtl = createRoomHost({ net, code, meta, seats, bots, resume });
-  hostCtl.run().catch(err => { console.error(err); $('roomNote').textContent = 'The game stopped because of an error: ' + err.message; });
-}
-
-async function resumeHost(data) {
-  const saved = await net.loadHostState(code);
-  if (!saved || !saved.table || saved.status === 'finished') {
-    $('roomNote').textContent = "The saved game couldn't be restored. Leave and make a new room.";
-    return;
-  }
-  launchHost(data.meta, data.seats, data.bots, saved);
+  hostStarting = true;   // so render() doesn't also try to start the dealer when the status flips
+  try {
+    const r = await net.getRoom(code);
+    const total = Object.keys(r.seats || {}).length + Object.keys(r.bots || {}).length;
+    if (total < 2) { $('btnStart').disabled = false; return; }
+    await net.updateMeta(code, { status: 'playing' });
+    launchHost({ ...r.meta, status: 'playing' }, r.seats, r.bots, null);
+  } finally { hostStarting = false; }
 }
 
 async function leaveLobby() {
@@ -264,8 +309,30 @@ async function leaveLobby() {
   location.href = 'rooms.html';
 }
 
+// ---------- Leaving a game in progress ----------
 async function leaveGame() {
-  if (isHost) {
+  const meta = roomData.meta;
+  if (isContinuous(meta)) {
+    if (!confirm('Leave this table? You take your chips with you.')) return;
+    if (isHost) {
+      // Hand the dealing to another connected player; if I'm alone, close the table
+      const next = Object.entries(roomData.seats || {})
+        .filter(([uid]) => uid !== myId && (roomData.presence || {})[uid])
+        .sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))[0];
+      if (next) {
+        if (hostCtl) { hostCtl.stop(); hostCtl = null; }
+        await net.setHost(code, next[0]);
+      } else {
+        if (hostCtl) await hostCtl.close();
+        await net.deleteRoom(code);
+        location.href = 'rooms.html';
+        return;
+      }
+    } else {
+      await net.sendAction(code, { seq: -1, type: 'leave' });   // folds me if it's my turn
+    }
+    await net.leaveSeat(code);
+  } else if (isHost) {
     if (!confirm('You are the host: leaving ends the game for everyone. Leave anyway?')) return;
     if (hostCtl) hostCtl.stop();
     await net.updateMeta(code, { status: 'finished' });
@@ -284,20 +351,42 @@ function resetTableState() {
   $('log').textContent = '';
 }
 
+// The line above the table: what kind of table this is, and its blinds / round / clock
+let noteContext = null;   // { meta, st, view, hostOffline, waitingToSit } from the latest draw (the arena clock re-uses it every tick)
+
+function noteText() {
+  const { meta, st, view, hostOffline, waitingToSit } = noteContext;
+  if (hostOffline) return '⚠ The dealer seems to be offline. Another player will take over in a few seconds…';
+  let text;
+  if (meta.mode === 'arena') {
+    const where = st.round ? `round ${st.round.n}, hand ${Math.min(st.round.hands + 1, st.round.of)} of ${st.round.of}` : 'between rounds';
+    text = `Arena ${arenaLabel(meta.arena)} · ${where} · arena ends in ${countdownText(meta.arenaEnd - Date.now())}`;
+  } else if (meta.mode === 'open') {
+    text = `Open table · blinds ${fmt(view.sb)}/${fmt(view.bb)} · sit down or leave any time · rebuy if you bust`;
+  } else {
+    text = `Room ${code} · blinds ${fmt(view.sb)}/${fmt(view.bb)} · no rebuys, last player with chips wins`;
+  }
+  if (waitingToSit) text += meta.mode === 'arena' ? ' · you play from the next round' : ' · you are dealt in at the next hand';
+  return text;
+}
+
 function renderGame() {
   const { meta, state: st } = roomData;
   if (!st) {
-    setMessage(isHost ? 'Dealing…' : 'Waiting for the host…');
+    setMessage(isHost ? 'Setting up the table…' : 'Waiting for the host…');
+    renderSeatsOnly();
     return;
   }
   const view = st.view;
   const me = view.seats.find(s => s.id === myId);
 
-  // A banner when the host (who runs the game) is not connected
-  const hostOffline = !isHost && meta.status === 'playing' && !(roomData.presence || {})[meta.host];
-  $('roomNote').textContent = hostOffline
-    ? '⚠ The host seems to be offline. The game is paused until they come back.'
-    : `Room ${code} · blinds ${fmt(view.sb)}/${fmt(view.bb)} · no rebuys, last player with chips wins`;
+  // The note above the table; a banner when the dealer (who runs the game) is not connected
+  noteContext = {
+    meta, st, view,
+    hostOffline: !isHost && meta.status === 'playing' && !(roomData.presence || {})[meta.host],
+    waitingToSit: !me,      // I have a seat but the dealer hasn't dealt me in yet
+  };
+  $('roomNote').textContent = noteText();
 
   // What to draw (see room-view.js), then hand it to table-ui.js
   const shown = tableFromState(view, myId, myPrivate);
@@ -314,7 +403,16 @@ function renderGame() {
   // New log lines
   (st.log || []).filter(l => l.id > lastLogId).forEach(l => { log(l.text, l.cls); lastLogId = l.id; });
 
-  setMessage(shown.message);
+  // The message under the pot
+  let message = shown.message;
+  if (st.status === 'waiting') message = meta.mode === 'arena' ? 'Waiting for another player…' : 'Waiting for more players…';
+  if (meta.mode === 'arena' && !st.round && st.roundResult) {
+    message = `Round ${st.roundResult.n}: ` + st.roundResult.rows.map(r => `${r.name} +${r.points}`).join(' · ');
+  }
+  setMessage(message);
+
+  // The rebuy button (open tables): when I'm out of chips
+  $('btnRebuy').classList.toggle('hidden', !(meta.mode === 'open' && me && me.chips === 0 && !me.inHand));
 
   // Everything below only needs doing once per new table state
   if (st.seq !== lastSeq) {
@@ -334,8 +432,15 @@ function renderGame() {
     setControlsEnabled(false);
   }
 
-  // Game over (the host's game finished, or the host ended it)
-  if ((st.status === 'finished' || meta.status === 'finished') && !overShown) showGameOver(st, view);
+  // Game over (the host's game finished, the arena ended, or the host closed the table)
+  if ((st.status === 'finished' || meta.status === 'finished') && !overShown) showGameOver(st, view, meta);
+}
+
+// Before the first state arrives (an open table that is just starting): list who is sitting here
+function renderSeatsOnly() {
+  const ul = $('roster');
+  ul.textContent = '';
+  Object.values(roomData.seats || {}).forEach(s => ul.appendChild(personRow({ avatar: s.avatar || '😎', color: s.color || '#2f8f5b', name: s.name })));
 }
 
 function renderPlayers(view) {
@@ -348,15 +453,19 @@ function renderPlayers(view) {
   });
 }
 
-function showGameOver(st, view) {
+function showGameOver(st, view, meta) {
   overShown = true;
   const winner = view.seats.find(s => s.id === st.winner);
-  let text = 'The host ended the game.';
+  let text = isContinuous(meta) ? 'This table has closed.' : 'The host ended the game.';
   if (st.endReason === 'last-standing' && winner) text = `${winner.name} won the game with ${fmt(winner.chips)} chips!`;
   else if (st.endReason === 'humans-out' && winner) text = `Every human player is out. ${winner.name} (a bot) was in the lead with ${fmt(winner.chips)} chips.`;
+  else if (st.endReason === 'arena-over') text = 'The arena is over. Check the standings to see where you finished!';
   $('overText').textContent = text;
-  $('btnAgain').classList.toggle('hidden', !isHost);
-  $('overHint').textContent = isHost ? '' : 'Waiting for the host to open a new lobby, or leave when you like.';
+  const arenaOver = st.endReason === 'arena-over';
+  $('overLink').textContent = arenaOver ? 'Arena standings' : 'Back to rooms';
+  $('overLink').href = arenaOver ? 'arena.html' : 'rooms.html';
+  $('btnAgain').classList.toggle('hidden', !isHost || isContinuous(meta));
+  $('overHint').textContent = isHost || isContinuous(meta) ? '' : 'Waiting for the host to open a new lobby, or leave when you like.';
   setControlsEnabled(false);
   $('roomOver').showModal();
 }
@@ -366,11 +475,14 @@ async function playAgain() {
   await net.resetRoom(code);
 }
 
-// The "Your turn · 12s" countdown
-function tickTimer() {
-  if (!turnDeadline) { $('turnTimer').textContent = ''; return; }
-  const secs = Math.max(0, Math.ceil((turnDeadline - performance.now()) / 1000));
-  $('turnTimer').textContent = `⏱ ${turnName} · ${secs}s`;
+// Runs four times a second: the "Your turn · 12s" countdown, and the arena clock
+function tick() {
+  if (!turnDeadline) { $('turnTimer').textContent = ''; }
+  else {
+    const secs = Math.max(0, Math.ceil((turnDeadline - performance.now()) / 1000));
+    $('turnTimer').textContent = `⏱ ${turnName} · ${secs}s`;
+  }
+  if (noteContext && noteContext.meta.mode === 'arena') $('roomNote').textContent = noteText();
 }
 
 // ---------- Wiring ----------
@@ -380,6 +492,7 @@ $('btnStart').onclick = startGame;
 $('btnLeaveLobby').onclick = leaveLobby;
 $('btnLeaveGame').onclick = leaveGame;
 $('btnAgain').onclick = playAgain;
+$('btnRebuy').onclick = () => { $('btnRebuy').classList.add('hidden'); net.sendAction(code, { seq: -1, type: 'rebuy' }); };
 $('btnCopyCode').onclick = () => copyText(code, $('btnCopyCode'));
 $('btnCopyLink').onclick = () => copyText(`${location.origin}${location.pathname}?code=${code}`, $('btnCopyLink'));
 

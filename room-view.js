@@ -18,7 +18,7 @@ function tableFromState(view, myId, myPrivate) {
     return {
       id: s.id, name: s.name, avatar: s.avatar, color: s.color, isHuman: s.id === myId,
       chips: s.chips, bet: s.bet || 0, totalBet: s.totalBet || 0, folded: Boolean(s.folded) || out, allIn: Boolean(s.allIn),
-      status: out ? 'Out' : s.status || '', statusClass: out ? 's-fold' : s.statusClass || '', showCards: Boolean(s.showCards),
+      status: out ? (s.waiting ? 'Next round' : 'Out') : s.status || '', statusClass: out ? 's-fold' : s.statusClass || '', showCards: Boolean(s.showCards),
       // Others' cards show as backs (id -1 is a placeholder), mine only once they have arrived, a showdown shows real cards
       hole: s.showCards ? (s.hole || []).map(cardFromId)
         : s.id === myId ? myHole

@@ -3,23 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rooms · Poker Night</title>
+  <title>Multiplayer · Poker Night</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
     <h1><a href="index.html">♠ <span>Poker</span> Night</a></h1>
-    <div class="sub">Play with friends</div>
+    <div class="sub">Multiplayer</div>
     <nav class="topnav"><a class="tut-link" href="index.html">☰ Menu</a></nav>
     <div class="auth-bar" id="authBar"></div>
   </header>
 
   <main class="page narrow">
     <div class="hero">
-      <h2>Play with friends</h2>
-      <p class="season-line">Make a room, share the 5-letter code, and play. Chips are play money.</p>
+      <h2>Multiplayer</h2>
+      <p class="season-line">Play with friends or with anyone. Chips are play money.</p>
     </div>
+
+    <nav class="menu-grid hub">
+      <a class="menu-card" href="tables.html">
+        <span class="mc-icon">🪑</span><b>Open tables</b><small>Sit down at a table anyone can join. Come and go as you like, rebuy if you bust.</small>
+      </a>
+      <a class="menu-card" href="arena.html">
+        <span class="mc-icon">🏟️</span><b>Arena</b><small>Every half hour: quick rounds, points for your finish, and a live leaderboard.</small>
+      </a>
+    </nav>
 
     <!-- rooms.js shows one of these depending on whether you are signed in -->
     <section class="panel acct-signedout hidden" id="needSignIn">
@@ -35,13 +44,13 @@
 
     <div id="roomForms" class="hidden">
       <section class="panel acct-section">
-        <h2>Create a room</h2>
-        <p class="hint">You become the host: you pick the options, add bots if you like, and start the game when everyone is in.</p>
+        <h2>Private room with friends</h2>
+        <p class="hint">Make a room, share the 5-letter code, and play. You become the host: you pick the options, add bots if you like, and start the game when everyone is in.</p>
         <button class="btn deal" id="btnCreate" type="button">Create a room</button>
       </section>
 
       <section class="panel acct-section">
-        <h2>Join with a code</h2>
+        <h2>Join a private room with a code</h2>
         <form class="join-form" id="joinForm">
           <input id="joinCode" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE" aria-label="Room code">
           <button class="btn deal" type="submit">Join</button>
@@ -50,7 +59,7 @@
     </div>
 
     <p class="error-line" id="roomsError" role="alert"></p>
-    <p class="hint center">Want to see how it works alone? <a href="room.html?local">Open a one-tab demo with bots</a>.</p>
+    <p class="hint centered">Want to see how it works alone? <a href="room.html?local">Open a one-tab demo with bots</a>.</p>
   </main>
 
   <script src="common.js"></script>

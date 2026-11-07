@@ -476,5 +476,18 @@ table.lb tr.waiting td { opacity: 0.5; }
 .join-form input { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: #0e131e; color: var(--text); font: inherit; font-size: 1.3rem; letter-spacing: 0.3em; text-transform: uppercase; text-align: center; }
 .join-form input:focus { outline: 2px solid var(--gold); outline-offset: -1px; }
 .error-line { margin: 12px 0 0; min-height: 1.3em; color: #ff6b7d; text-align: center; font-size: 0.9rem; }
-.hint.center { text-align: center; }
+.hint.centered { text-align: center; }
 .turn-timer { margin-top: 6px; color: var(--gold); font-weight: 700; font-size: 0.9rem; min-height: 1.2em; }
+
+/* Open tables and the Arena */
+.menu-grid.hub { margin-bottom: 18px; }
+.center-row { justify-content: center; margin-bottom: 6px; }
+.table-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.table-list li { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: #0e131e; border: 1px solid var(--border); }
+.table-list .grow { flex: 1; min-width: 0; }
+.table-list b { display: block; }
+.table-list small { color: var(--muted); font-size: 0.8rem; }
+.seat-count { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; }
+.btn.disabled { opacity: 0.35; pointer-events: none; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+table.lb.players th:nth-child(2) { text-align: left; }

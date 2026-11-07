@@ -180,4 +180,27 @@ test('legalFromView matches legal() for every seat, at every point of random han
   }
 });
 
+test('removing a seat keeps the dealer button sensible; adding a seat joins the next hand', () => {
+  const t = mk([1000, 1000, 1000, 1000]);
+  startHand(t);                                   // dealer = seat 0
+  while (t.phase !== 'hand-over') act(t, t.toAct, { type: 'fold' });
+  const dealerId = t.seats[t.dealerSeat].id;
+  removeSeats(t, ['p2']);                         // someone not the dealer leaves
+  assert.strictEqual(t.seats.length, 3);
+  assert.strictEqual(t.seats[t.dealerSeat].id, dealerId, 'the dealer is still the dealer');
+  // the dealer leaves: the button steps back so the NEXT player becomes dealer
+  const t2 = mk([1000, 1000, 1000, 1000]);
+  startHand(t2);
+  while (t2.phase !== 'hand-over') act(t2, t2.toAct, { type: 'fold' });
+  t2.dealerSeat = 1;                              // pretend seat 1 (p1) dealt last
+  removeSeats(t2, ['p1']);
+  startHand(t2);
+  assert.strictEqual(t2.seats[t2.dealerSeat].id, 'p2', 'p2 (next after the old dealer) deals now');
+  // a newcomer is dealt in
+  addSeat(t2, newSeat({ id: 'new', name: 'New', chips: 500 }));
+  while (t2.phase !== 'hand-over') act(t2, t2.toAct, { type: 'fold' });
+  startHand(t2);
+  assert.strictEqual(t2.seats.find(s => s.id === 'new').inHand, true);
+});
+
 console.log(`\n${passed} passed${process.exitCode ? ', SOME FAILED' : ''}`);

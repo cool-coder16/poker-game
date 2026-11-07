@@ -3,7 +3,7 @@
 const assert = require('assert');
 const { load, seeded } = require('./helpers');
 if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
-load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js');
+load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js', 'arena.js');
 
 let passed = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -273,6 +273,163 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
     assert(seen.has('1:10') && seen.has('2:10'), 'hands 1-2 at the starting blind: ' + [...seen]);
     assert(seen.has('3:15') && seen.has('4:15'), 'hands 3-4 at the next level: ' + [...seen]);
     assert(seen.has('5:25'), 'hand 5 at the level after: ' + [...seen]);
+  });
+
+
+  // ---------------------------------------------------------------- open tables
+  const stateOf = room => room.hub.peek(`rooms/${room.code}/state`);
+  const seatIds = room => ((stateOf(room) || {}).view || { seats: [] }).seats.map(x => x.id);
+  async function addPlayer(room, uid, opts = {}) {
+    room.nets[uid] = createRoomNet(room.hub.store(uid));
+    await room.nets[uid].joinSeat(room.code, { name: uid, avatar: '😎', color: '#2f8f5b', joinedAt: Date.now() });
+    return simPlayer(room, uid, opts);
+  }
+  const openMeta = { mode: 'open', status: 'playing', maxSeats: 4, startChips: 150 };
+
+  await test('open table: waits alone, then people sit down mid-game, leave, and rebuy', async () => {
+    const room = await setupRoom({ humans: ['ann'], meta: openMeta });
+    simPlayer(room, 'ann', { seed: 61, passive: true });
+    const host = await startHost(room);
+    await until(() => (stateOf(room) || {}).status === 'waiting', 3000, 'a lone player to wait');
+    assert.notStrictEqual(room.hub.peek(`rooms/${room.code}/meta/status`), 'finished', 'an open table never finishes');
+    assert(room.hub.peek(`lobby/${room.code}`), 'the table is in the public list');
+    // ben sits down: play starts
+    await addPlayer(room, 'ben', { seed: 62, passive: true });
+    await until(() => (stateOf(room) || {}).status === 'playing' && seatIds(room).includes('ben'), 5000, 'ben to be dealt in');
+    // cat sits down while hands are being played
+    await addPlayer(room, 'cat', { seed: 63, passive: true });
+    await until(() => seatIds(room).includes('cat'), 5000, 'cat to appear at the table');
+    // ben leaves
+    await room.nets.ben.sendAction(room.code, { seq: -1, type: 'leave' });
+    await room.nets.ben.leaveSeat(room.code);
+    await until(() => !seatIds(room).includes('ben'), 5000, 'ben to leave');
+    assert(seatIds(room).includes('ann') && seatIds(room).includes('cat'));
+    host.stop();
+  });
+
+  await test('open table: a busted player can rebuy and is dealt back in', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben'], meta: openMeta });
+    const table = createTable({ sb: 10, seats: [newSeat({ id: 'ann', name: 'ann', chips: 300 }), newSeat({ id: 'ben', name: 'ben', chips: 0 })] });
+    table.phase = 'hand-over'; table.handNo = 5;
+    simPlayer(room, 'ann', { seed: 64, passive: true });
+    simPlayer(room, 'ben', { seed: 65, passive: true });
+    const host = await startHost(room, { table, seq: 1, left: [] });
+    await until(() => (stateOf(room) || {}).status === 'waiting', 3000, 'waiting (only ann has chips)');
+    await room.nets.ben.sendAction(room.code, { seq: -1, type: 'rebuy' });
+    await until(() => (stateOf(room) || {}).status === 'playing', 5000, 'play to resume after the rebuy');
+    const ben = stateOf(room).view.seats.find(x => x.id === 'ben');
+    assert(ben.chips + ben.totalBet >= 100, 'ben has chips again: ' + JSON.stringify(ben));
+    host.stop();
+  });
+
+  await test('open table: a full table turns extra players away', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben'], meta: { ...openMeta, maxSeats: 3 } });
+    simPlayer(room, 'ann', { seed: 66, passive: true });
+    simPlayer(room, 'ben', { seed: 67, passive: true });
+    const host = await startHost(room);
+    await until(() => (stateOf(room) || {}).status === 'playing', 3000, 'play');
+    await addPlayer(room, 'cat', { seed: 68, passive: true });
+    await addPlayer(room, 'dan', { seed: 69, passive: true });   // the 4th player at a 3-seat table
+    await until(() => seatIds(room).length === 3 && !room.hub.peek(`rooms/${room.code}/seats/dan`), 6000, 'the extra player to be turned away');
+    assert(seatIds(room).includes('cat'), 'the first newcomer got the free seat');
+    host.stop();
+  });
+
+  await test('open table: someone who stays disconnected is dropped from the table', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben', 'cat'], meta: openMeta, timing: { awayMs: 500, absentGraceMs: 200 } });
+    simPlayer(room, 'ann', { seed: 70, passive: true });
+    simPlayer(room, 'ben', { seed: 71, passive: true });
+    simPlayer(room, 'cat', { respond: false });
+    const host = await startHost(room);
+    await sleep(100);
+    room.hub.disconnect('cat');
+    await until(() => !seatIds(room).includes('cat') && !room.hub.peek(`rooms/${room.code}/seats/cat`), 8000, 'cat to be dropped');
+    host.stop();
+  });
+
+  await test('dealing can be handed to another player: the saved table carries on', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben', 'cat'], meta: openMeta });
+    ['ann', 'ben', 'cat'].forEach((u, i) => simPlayer(room, u, { seed: 80 + i, passive: true }));
+    const host1 = await startHost(room);
+    await until(() => (stateOf(room) || {}).view?.handNo >= 2, 8000, 'two hands');
+    host1.stop();
+    await host1.promise;
+    // ann is gone; ben takes over from what ann saved
+    await room.nets.ann.updateMeta(room.code, { host: 'ben' });
+    const saved = await room.nets.ben.loadHostState(room.code);
+    const r = await room.nets.ben.getRoom(room.code);
+    const handBefore = stateOf(room).view.handNo;
+    const host2 = createRoomHost({ net: room.nets.ben, code: room.code, meta: r.meta, seats: r.seats, bots: r.bots, resume: saved, timing: room.timing });
+    host2.promise = host2.run();
+    await until(() => stateOf(room).view.handNo >= handBefore + 2, 8000, 'the new dealer to keep dealing');
+    assert.strictEqual(room.hub.peek(`lobby/${room.code}`).host, 'ben', 'the public list now names the new host');
+    host2.stop();
+  });
+
+  await test('the public list hides stale tables, and quickJoin picks the fullest table with room (or makes one)', async () => {
+    const hub = createMemoryHub();
+    const net = createRoomNet(hub.store('zed'));
+    const now = Date.now();
+    await net.publishLobby('AAAAA', { code: 'AAAAA', mode: 'open', seats: 2, max: 6, beat: now });
+    await net.publishLobby('BBBBB', { code: 'BBBBB', mode: 'open', seats: 4, max: 6, beat: now });
+    await net.publishLobby('CCCCC', { code: 'CCCCC', mode: 'open', seats: 6, max: 6, beat: now });      // full
+    await net.publishLobby('DDDDD', { code: 'DDDDD', mode: 'open', seats: 5, max: 6, beat: now - 120000 }); // stale
+    assert.deepStrictEqual(liveTables(await net.getLobby(), now).map(e => e.code), ['CCCCC', 'BBBBB', 'AAAAA']);
+    assert.strictEqual(await quickJoin(net, 'open', 'Zed'), 'BBBBB', 'fullest table that still has a free seat');
+    await net.removeLobby('BBBBB'); await net.removeLobby('AAAAA');
+    const code = await quickJoin(net, 'open', 'Zed');          // only a full table left: make a new one
+    const made = await net.getRoom(code);
+    assert.strictEqual(made.meta.mode, 'open');
+    assert.strictEqual(made.meta.host, 'zed');
+    assert.strictEqual(made.meta.status, 'playing');
+    const arenaCode = await quickJoin(net, 'arena', 'Zed');
+    const a = await net.getRoom(arenaCode);
+    assert.strictEqual(a.meta.mode, 'arena');
+    assert.strictEqual(a.meta.arena, arenaWindow().id);
+    assert(a.meta.arenaEnd > Date.now());
+  });
+
+  // ---------------------------------------------------------------- arena
+  await test('arena: rounds are scored, points add up, and the arena ends at its end time', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben', 'cat'], meta: { mode: 'arena', status: 'playing', arena: 'T-1', roundHands: 3, startChips: 1000, maxSeats: 6, arenaEnd: Date.now() + 6000 }, timing: { roundPauseMs: 0 } });
+    ['ann', 'ben', 'cat'].forEach((u, i) => simPlayer(room, u, { seed: 90 + i }));
+    const rounds = new Map();
+    room.nets.ann.watchRoom(room.code, r => { const rr = r && r.state && r.state.roundResult; if (rr) rounds.set(rr.n, rr); });
+    const host = await startHost(room);
+    await finished(room);
+    await host.promise;
+    const st = stateOf(room);
+    assert.strictEqual(st.endReason, 'arena-over');
+    assert(rounds.size >= 2, 'at least two rounds were played: ' + rounds.size);
+    // each round's points follow the rules, and the published table scores are the sum of them
+    const expected = {};
+    rounds.forEach(rr => {
+      assert.strictEqual(rr.rows.length, 3);
+      rr.rows.forEach(row => { expected[row.id] = (expected[row.id] || 0) + row.points; assert.strictEqual(row.points, arenaPoints(row.rank, 3)); });
+      assert.strictEqual(rr.rows.filter(row => row.rank === 1).length >= 1, true);
+    });
+    const published = room.hub.peek(`arenas/T-1/tables/${room.code}`).scores;
+    ['ann', 'ben', 'cat'].forEach(u => {
+      assert(published[u].rounds >= rounds.size, u + ' rounds');
+      assert(published[u].points >= expected[u], u + ' points');
+    });
+    const standings = aggregateArena(room.hub.peek('arenas/T-1/tables'));
+    assert.strictEqual(standings.length, 3);
+    assert(!room.hub.peek(`lobby/${room.code}`), 'the table left the public list when the arena ended');
+  });
+
+  await test('arena: a late arrival waits for the next round, then plays', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben'], meta: { mode: 'arena', status: 'playing', arena: 'T-2', roundHands: 4, startChips: 1000, maxSeats: 6, arenaEnd: Date.now() + 60000 }, timing: { roundPauseMs: 0 } });
+    ['ann', 'ben'].forEach((u, i) => simPlayer(room, u, { seed: 95 + i, passive: true }));
+    const host = await startHost(room);
+    await until(() => (stateOf(room) || {}).round, 3000, 'round 1');
+    await addPlayer(room, 'cat', { seed: 97, passive: true });
+    await until(() => seatIds(room).includes('cat'), 4000, 'cat to appear');
+    // cat appears in the middle of round 1, so is waiting (no chips in this round)
+    const waitingSeen = stateOf(room).view.seats.find(x => x.id === 'cat');
+    assert.strictEqual(waitingSeen.waiting, true, 'cat waits for the next round');
+    await until(() => { const rr = stateOf(room).roundResult; return rr && rr.rows.some(row => row.id === 'cat'); }, 15000, 'cat to be scored in a later round');
+    host.stop();
   });
 
   console.log(`\n${passed} passed${process.exitCode ? ', SOME FAILED' : ''}`);

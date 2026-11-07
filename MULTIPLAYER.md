@@ -1,61 +1,88 @@
-# Online rooms: how it works (and how to change it later)
+# Online play: how it works (and how to change it later)
 
-Players make a room, share a 5-letter code, and play. Chips are play money. This first version is
-**free**: it uses Firebase's Realtime Database on the free plan, and **the host's browser acts as the dealer**.
+Three ways to play with other people. All chips are play money, and all of it is **free**: it uses
+Firebase's Realtime Database on the free plan, and **one player's browser acts as the dealer** for each table.
+
+| | What it is | Bots |
+|---|---|---|
+| **Private room** (`rooms.html`) | Make a room, share a 5-letter code. A lobby, then a freezeout: no rebuys, last player with chips wins. | The host can add them |
+| **Open table** (`tables.html`) | A public table anyone can join. Sit down or leave any time, rebuy if you bust, plays on while 2+ people are there. | No |
+| **Arena** (`arena.html`) | A 30-minute window every :00 and :30 UTC. Tables play 10-hand rounds with equal stacks; your place in each round earns points; standings add up across all tables. | No |
 
 ## The layers
 
 ```
-room.html / rooms.html          the pages
-  room-client.js, rooms.js      what you see and click
+rooms.html, tables.html,        the pages
+  arena.html, room.html
+  room-client.js, rooms.js,     what you see and click
+  tables.js, arena-page.js
   room-view.js                  turns the published table into what table-ui.js draws (pure, tested)
   table-ui.js                   draws the table (shared with the single-player game)
 
-room-host.js                    the DEALER: runs a game, waits for moves, publishes the table
+room-host.js                    the DEALER: runs a table, waits for moves, publishes the state
   engine.js                     the poker rules as a pure state machine (no screen, no network, tested)
+  arena.js                      the Arena rules: windows, points, standings (pure, tested)
   bots.js                       bot decisions
 
-room-net.js                     every room operation (create, join, publish, send a move...)
+room-net.js                     every room operation (create, join, publish, public list, arena scores...)
   store-firebase.js             the "store" for the real Realtime Database      <- swap this...
   store-memory.js               a fake in-memory store (tests, and room.html?local)
 ```
 
-Only `room-net.js` knows what the rooms look like in the database, and only a *store* knows which
-database it is. The engine and the host don't know about either.
+Only `room-net.js` knows what the data looks like, and only a *store* knows which database it is.
+The engine and the dealer know about neither.
+
+## The dealer can change hands
+
+The dealer saves its whole table to `roomHost/<code>` after every move (readable only by the current dealer).
+So when the dealer leaves, or disappears, another player can carry on from that saved table:
+- **Leaving politely:** the dealer hands the job to a connected player (`setHost`).
+- **Vanishing:** after about 12 seconds a seated player claims the job. The database rules only allow that
+  when the dealer's presence is really gone (`meta/host` rule in `database.rules.json`).
+- A refreshed dealer simply resumes. If a dealer who lost the job is still running, it stops itself.
+
+## Public list and Arena scores
+
+- `lobby/<code>`: one line per open/arena table, refreshed by the dealer every ~20 seconds. Lines older than
+  a minute are hidden (the dealer is gone).
+- `arenas/<window id>/tables/<code>`: each arena table's own running scores. The Arena page adds them up
+  (`aggregateArena` in `arena.js`).
 
 ## Changing the backend later
 
-- **Different database, same idea** (e.g. another realtime service): write a new store file with the same
-  small interface as `store-memory.js` (`get`, `set`, `update`, `remove`, `create`, `watch`, `keepPresent`).
-  Nothing else changes.
-- **A real server that deals the cards** (cheat-proof, and runs scheduled tournaments): run
-  `createRoomHost(...)` from `room-host.js` on the server instead of in the host's browser. It needs
-  `poker.js`, `engine.js`, `bots.js` and `room-net.js` (they are plain scripts with no browser code in
-  them, and the tests load them in Node). Players' pages stay the same.
+- **Different database, same idea:** write a new store file with the small interface in `store-memory.js`
+  (`get`, `set`, `update`, `remove`, `create`, `watch`, `keepPresent`). Nothing else changes.
+- **A real server that deals the cards** (cheat-proof; also the right place for scheduled tournaments):
+  run `createRoomHost(...)` from `room-host.js` on the server instead of in a player's browser. It needs
+  `poker.js`, `engine.js`, `bots.js`, `arena.js` and `room-net.js` (plain scripts with no browser code; the
+  tests load them in Node). Players' pages stay the same.
 
 ## Honest limits of the free version
 
-- **The host's browser does the shuffling**, so a host could peek at cards. Fine for friends, not for
-  anything competitive. Other players cannot see your cards: they are stored where only you (and the
-  host) can read them (`roomPrivate/`, see `database.rules.json`).
-- **If the host closes the tab**, the game pauses. Opening the room again as host resumes it
-  (the host saves its table to `roomHost/<code>`, readable only by the host).
-- Free-plan limits (about 100 players connected at once) are plenty for friends.
-- No spectators, chat or rebuys yet.
+- **The dealer's browser does the shuffling**, so its owner could peek, and could in principle report false
+  Arena scores. Other players cannot see your cards: they are stored where only you (and the dealer) can
+  read them (`roomPrivate/`). Arena standings run on the honor system until a server deals.
+- If the dealer vanishes and nobody else is at the table, the table is gone.
+- The free database allows about 100 players connected at once. Plenty for friends.
+- Not built yet: spectators, chat, bots at open/arena tables, Arena points feeding the rating.
 
 ## Security rules
 
 `database.rules.json` is the copy of the rules published in the Firebase console
-(Realtime Database -> Rules). Keep them in sync if you edit either one. The key ideas: only the host can
-write the table; each player can only write their own move and presence; private cards are readable
-only by their owner; rooms are only readable by signed-in people who know the code.
+(Realtime Database -> Rules). Keep them in sync if you edit either one. Key ideas: only the dealer can write the
+table, the public list line and the Arena scores for its room; each player can only write their own move and
+presence; private cards are readable only by their owner; rooms are only readable by signed-in people who know
+the code; a seated player may take over a dealer who is truly disconnected.
 
 ## Tests (no network needed)
 
 ```
-node tests/engine.test.js     the poker rules (12 tests, including 3,000 random hands)
-node tests/room.test.js       whole rooms on the in-memory store (10 tests: privacy, timeouts,
-                              disconnects, host refresh, game over, rising blinds)
+node tests/engine.test.js     the poker rules (13 tests, including 3,000 random hands)
+node tests/arena.test.js      the Arena rules (windows, points, ties, standings)
+node tests/room.test.js       whole tables on the in-memory store (18 tests: privacy, timeouts, disconnects,
+                              dealer handoff, open tables, rebuys, arena rounds, the public list)
 ```
 
-`room.html?local` opens a one-tab demo room with two bots, handy for trying the table UI.
+Try the table UI with no network or friends:
+`room.html?local` (private room), `room.html?local=open` (open table), `room.html?local=arena&rounds=3` (Arena,
+with 3-hand rounds so you see scoring quickly). Each has two bots for company.

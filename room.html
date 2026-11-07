@@ -101,6 +101,7 @@
       <div class="controls">
         <div class="controls-top">
           <div class="myhand" id="myHand"></div>
+          <button class="btn deal hidden" id="btnRebuy" type="button">Rebuy</button>
         </div>
         <div class="actions">
           <button class="btn fold" id="btnFold" disabled>Fold</button>
@@ -145,7 +146,7 @@
     <p class="run-reason" id="overText"></p>
     <div class="run-actions">
       <button class="btn deal hidden" id="btnAgain" type="button">Play again (new lobby)</button>
-      <a class="btn small" href="rooms.html">Back to rooms</a>
+      <a class="btn small" id="overLink" href="rooms.html">Back to rooms</a>
     </div>
     <p class="hint" id="overHint"></p>
   </dialog>
@@ -159,6 +160,7 @@
   <script src="room-view.js"></script>
   <script src="store-memory.js"></script>
   <script src="room-net.js"></script>
+  <script src="arena.js"></script>
   <script src="room-host.js"></script>
   <script src="table-ui.js"></script>
   <script src="room-client.js"></script>

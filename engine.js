@@ -32,6 +32,23 @@ function createTable({ seats, sb }) {
   };
 }
 
+// ---------- Changing who is at the table (only between hands) ----------
+// Open tables and the arena let people come and go. Seats are removed and added at the table's
+// hand boundary, and the dealer button is kept sensible.
+function addSeat(t, seat) {
+  t.seats.push(seat);
+}
+
+function removeSeats(t, ids) {
+  if (!ids.length) return;
+  const dealerId = t.seats[t.dealerSeat] ? t.seats[t.dealerSeat].id : null;
+  const before = t.dealerSeat;
+  t.seats = t.seats.filter(s => !ids.includes(s.id));
+  const i = dealerId === null ? -1 : t.seats.findIndex(s => s.id === dealerId);
+  // The dealer left: step back one, so the button lands on whoever was next in line
+  t.dealerSeat = i !== -1 ? i : Math.max(-1, Math.min(before, t.seats.length) - 1);
+}
+
 // ---------- Small helpers ----------
 const cardFromId = id => ({ r: (id % 13) + 2, s: Math.floor(id / 13), id });   // inverse of makeDeck()'s ids
 
@@ -291,7 +308,7 @@ function publicView(t) {
     seats: t.seats.map(s => ({
       id: s.id, name: s.name, avatar: s.avatar, color: s.color, isBot: s.isBot,
       chips: s.chips, bet: s.bet, totalBet: s.totalBet, folded: s.folded, allIn: s.allIn, inHand: s.inHand,
-      status: s.status, statusClass: s.statusClass, showCards: s.showCards,
+      status: s.status, statusClass: s.statusClass, showCards: s.showCards, waiting: Boolean(s.waiting),
       holeCount: s.hole.length, hole: s.showCards ? s.hole.map(c => c.id) : [],
     })),
   };

@@ -10,6 +10,8 @@
 //   roomPrivate/<code>/<uid> that player's hole cards (only they and the host can read it)
 //   roomActions/<code>/<uid> that player's latest move (only the host reads it)
 //   roomHost/<code>          the host's saved table, so a refreshed host can carry on (host only)
+//   lobby/<code>             the public list of open and arena tables (the host refreshes it every ~20s)
+//   arenas/<id>/tables/<code>  one arena table's running scores (the host writes them)
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I: easy to read out loud
 
@@ -26,6 +28,34 @@ function makeRoomCode(length = 5) {
 
 const normalizeCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
+// ---------- Public tables (open tables and the arena) ----------
+const TABLE_STALE_MS = 60000;   // a table whose host hasn't refreshed its line for this long is considered gone
+
+// The open tables worth showing right now, fullest first (so new players fill tables up before starting new ones)
+function liveTables(all, now = Date.now()) {
+  return Object.values(all || {})
+    .filter(e => e && now - (e.beat || 0) < TABLE_STALE_MS)
+    .sort((a, b) => (b.seats || 0) - (a.seats || 0));
+}
+
+// The options for a new open table or arena table (kind is 'open' or 'arena'). Needs arena.js for arena tables.
+function tableMeta(kind, hostName, extra = {}) {
+  const base = { hostName, status: 'playing', startChips: 1000, sb: 10, turnSeconds: 30, maxSeats: 6, allowBots: false, rising: false, handsPerLevel: 10 };
+  if (kind === 'arena') {
+    const w = arenaWindow();
+    return { ...base, mode: 'arena', arena: w.id, arenaEnd: w.end, roundHands: ARENA_ROUND_HANDS, ...extra };
+  }
+  return { ...base, mode: 'open', ...extra };
+}
+
+// "Play now": join the fullest table that has a free seat, or start a new one (you become its dealer). Returns the room code.
+async function quickJoin(net, kind, hostName) {
+  const wanted = kind === 'arena' ? arenaWindow().id : null;
+  const open = liveTables(await net.getLobby())
+    .filter(e => e.mode === kind && (e.seats || 0) < (e.max || 6) && (!wanted || e.arena === wanted));
+  return open.length ? open[0].code : net.createRoom(tableMeta(kind, hostName));
+}
+
 function createRoomNet(store) {
   const room = code => `rooms/${code}`;
 
@@ -36,7 +66,7 @@ function createRoomNet(store) {
     async createRoom(meta) {
       for (let attempt = 0; attempt < 8; attempt++) {
         const code = makeRoomCode();
-        const fullMeta = { ...meta, host: store.uid, status: 'lobby', createdAt: Date.now() };
+        const fullMeta = { status: 'lobby', ...meta, host: store.uid, createdAt: Date.now() };   // open tables start as 'playing'
         if (await store.create(`${room(code)}/meta`, fullMeta)) return code;
       }
       throw new Error('Could not find a free room code. Try again.');
@@ -46,6 +76,8 @@ function createRoomNet(store) {
     watchRoom(code, cb) { return store.watch(room(code), cb); },   // cb(everything public about the room)
 
     updateMeta: (code, patch) => store.update(`${room(code)}/meta`, patch),
+    // Hand the dealing to someone, or take it when the dealer has gone (the rules decide whether it's allowed)
+    setHost: (code, uid) => store.set(`${room(code)}/meta/host`, uid),
     joinSeat: (code, info) => store.set(`${room(code)}/seats/${store.uid}`, info),
     leaveSeat: (code, uid = store.uid) => store.remove(`${room(code)}/seats/${uid}`),
     setBots: (code, bots) => (Object.keys(bots).length ? store.set(`${room(code)}/bots`, bots) : store.remove(`${room(code)}/bots`)),
@@ -73,6 +105,16 @@ function createRoomNet(store) {
     // Player side
     watchPrivate: (code, cb) => store.watch(`roomPrivate/${code}/${store.uid}`, cb),
     sendAction: (code, action) => store.set(`roomActions/${code}/${store.uid}`, { ...action, n: Date.now() + Math.random() }),
+
+    // Public list of open tables. Each entry carries `beat` (when the host last refreshed it); stale ones are hidden.
+    publishLobby: (code, entry) => store.set(`lobby/${code}`, entry),
+    removeLobby: code => store.remove(`lobby/${code}`),
+    watchLobby: cb => store.watch('lobby', all => cb(all || {})),
+    getLobby: () => store.get('lobby'),
+
+    // Arena scores: every table publishes its own, and the standings add them up (see arena.js)
+    publishArenaTable: (arenaId, code, data) => store.set(`arenas/${arenaId}/tables/${code}`, data),
+    watchArena: (arenaId, cb) => store.watch(`arenas/${arenaId}/tables`, all => cb(all || {})),
 
     // After a game: back to the lobby, with the old table thrown away (host only)
     async resetRoom(code) {

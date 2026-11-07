@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arena · Poker Night</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1><a href="index.html">♠ <span>Poker</span> Night</a></h1>
+    <div class="sub">Arena</div>
+    <nav class="topnav"><a class="tut-link" href="rooms.html">← Multiplayer</a></nav>
+    <div class="auth-bar" id="authBar"></div>
+  </header>
+
+  <main class="page">
+    <div class="hero">
+      <h2>🏟️ Arena <span id="arenaName"></span></h2>
+      <p class="season-line" id="arenaClock"></p>
+    </div>
+
+    <section class="panel acct-signedout hidden" id="needSignIn">
+      <h2>Sign in to join the Arena</h2>
+      <p>You need a free account so your points have a name on them.</p>
+      <button class="btn deal" id="btnSignIn" type="button">Sign in / Create account</button>
+    </section>
+
+    <section class="panel acct-signedout hidden" id="notReady">
+      <h2>Online play is not switched on yet</h2>
+      <p>The site owner still needs to turn on the Realtime Database for this site.</p>
+    </section>
+
+    <div id="arenaView" class="hidden">
+      <div class="room-actions center-row">
+        <button class="btn deal" id="btnQuick" type="button">Join the Arena</button>
+        <button class="btn small" id="btnCreate" type="button">Start a new table</button>
+      </div>
+      <p class="hint centered" id="joinHint"></p>
+
+      <div class="lobby-grid">
+        <section class="panel acct-section">
+          <h2>Standings <span class="hint" id="myScore"></span></h2>
+          <div class="table-scroll"><table class="lb players" id="standings"></table></div>
+          <p class="board-msg" id="standingsMsg">Loading…</p>
+        </section>
+
+        <section class="panel acct-section">
+          <h2>Arena tables</h2>
+          <ul class="table-list" id="tableList"></ul>
+          <p class="board-msg" id="tableEmpty"></p>
+        </section>
+      </div>
+
+      <section class="panel acct-section">
+        <h2 id="lastTitle">Last Arena</h2>
+        <div class="table-scroll"><table class="lb players" id="lastStandings"></table></div>
+        <p class="board-msg" id="lastMsg"></p>
+      </section>
+    </div>
+
+    <p class="error-line" id="arenaError" role="alert"></p>
+
+    <details class="panel how" open>
+      <summary>How the Arena works</summary>
+      <ul>
+        <li><b>Every half hour</b> (at :00 and :30, UTC) a new 30-minute Arena starts. Join any time while it's running.</li>
+        <li><b>Rounds.</b> You sit at a table with other players. Everyone starts each round with the same chips and plays <b>10 hands</b>, with the blinds rising every 3 hands.</li>
+        <li><b>Points.</b> Your finishing place in the round pays <b>2 points for every player you beat</b>, plus <b>2 bonus points for winning</b>. In a 6-player round that's 12, 8, 6, 4, 2, 0.</li>
+        <li><b>No elimination.</b> Bust and you simply wait for the next round. Your Arena score is the total of your round points across every table.</li>
+        <li><b>Tables.</b> "Join the Arena" seats you at the fullest table with room, or starts a new one. If you join mid-round you play from the next round.</li>
+        <li><b>Fair play.</b> Chips are play money, with no prizes that cost or pay real money. A table's dealer reports its scores from their browser, so the standings run on the honor system for now.</li>
+      </ul>
+    </details>
+  </main>
+
+  <script src="common.js"></script>
+  <script src="season.js"></script>
+  <script src="account.js"></script>
+  <script src="arena.js"></script>
+  <script src="room-net.js"></script>
+  <script src="arena-page.js"></script>
+  <script src="firebase-config.js"></script>
+  <script type="module" src="auth.js"></script>
+  <script type="module" src="store-firebase.js"></script>
+</body>
+</html>
