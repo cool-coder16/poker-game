@@ -20,6 +20,7 @@ let minRaise = 0;      // smallest legal raise increment
 let activeId = null;   // id of the player whose turn it is
 let markers = {};      // ids holding the dealer button / blinds
 let winnerIds = new Set();
+let humanWinAmount = 0;   // what you won this hand (0 if nothing); used for profile stats
 let humanResolve = null;   // set while we are waiting for you to click something
 let humanCtx = null;
 let nextId = 1;
@@ -261,8 +262,12 @@ function renderRoster() {
     li.innerHTML = `<div class="avatar"></div><div class="rname"></div><span class="chips"></span>`;
     li.querySelector('.avatar').textContent = p.avatar;
     li.querySelector('.avatar').style.setProperty('--c', p.color);
-    li.querySelector('.rname').innerHTML = `${p.name}<small>${sub}</small>`;
-    li.querySelector('.rname').firstChild.textContent = p.name;
+    // Names can come from user accounts, so add them as plain text (never as HTML)
+    const rname = li.querySelector('.rname');
+    rname.append(p.name);
+    const small = document.createElement('small');
+    small.textContent = sub;
+    rname.appendChild(small);
     li.querySelector('.chips').textContent = fmt(p.chips);
     if (!p.isHuman) {
       const x = document.createElement('button');
@@ -290,6 +295,7 @@ const setMessage = t => { $('message').textContent = t; };
 async function startHand() {
   if (handActive) return;
   winnerIds = new Set();
+  applyPendingProfile();   // account.js: apply a sign-in/out that happened mid-hand
 
   // Apply seat changes that were waiting for the hand boundary
   roster.filter(p => p.leaving).forEach(p => log(`${p.name} left the table.`));
@@ -320,6 +326,7 @@ async function startHand() {
 
 async function playHand() {
   handNo++;
+  humanWinAmount = 0;
   const n = seated.length;
   seated.forEach(p => Object.assign(p, {
     hole: [], bet: 0, totalBet: 0, folded: false, allIn: false, acted: false,
@@ -552,6 +559,7 @@ async function awardUncontested() {
   winner.chips += amount;
   winner.status = `Wins ${fmt(amount)}`; winner.statusClass = 's-win';
   winnerIds.add(winner.id);
+  if (winner.isHuman) humanWinAmount = amount;
   seated.forEach(p => { p.totalBet = 0; p.bet = 0; });
   setMessage(`${winner.name} ${winVerb(winner)} ${fmt(amount)}`);
   log(`${winner.name} ${winVerb(winner)} ${fmt(amount)} (everyone else folded).`, 'win');
@@ -588,6 +596,7 @@ async function showdown() {
   const summary = [];
   won.forEach((amt, p) => {
     winnerIds.add(p.id);
+    if (p.isHuman) humanWinAmount = amt;
     p.status = `Wins ${fmt(amt)}`; p.statusClass = 's-win';
     summary.push(`${p.name} ${winVerb(p)} ${fmt(amt)} with ${handName(p.score)}`);
     log(`${p.name} ${winVerb(p)} ${fmt(amt)} with ${handName(p.score)}.`, 'win');
@@ -606,6 +615,7 @@ async function endHand() {
   $('btnCall').textContent = 'Check';
   renderRoster();
   update();
+  if (!tutorial) recordHandResult();   // account.js: update + save stats when signed in
 
   const me = roster[0];
   const btn = $('btnDeal');
