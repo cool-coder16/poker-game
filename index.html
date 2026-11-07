@@ -9,172 +9,45 @@
 </head>
 <body>
   <header>
-    <h1>♠ <span>Poker</span> Night</h1>
+    <h1><a href="index.html">♠ <span>Poker</span> Night</a></h1>
     <div class="sub">No-limit Texas Hold'em</div>
-    <a class="tut-link" id="tutLink" href="?tutorial">🎓 Tutorial</a>
-    <div class="auth-bar" id="authBar"></div>
+    <div class="auth-bar topnav" id="authBar"></div>
   </header>
 
-  <!-- Sign-in / create-account dialog (opened by account.js) -->
-  <dialog id="authDialog">
-    <form method="dialog" class="auth-close"><button aria-label="Close">✕</button></form>
-    <h2>Welcome to Poker Night</h2>
-    <div class="auth-tabs">
-      <button type="button" id="tabIn" class="active">Sign in</button>
-      <button type="button" id="tabUp">Create account</button>
+  <main class="page menu">
+    <div class="hero">
+      <div class="hero-suits">♠ <span>♥</span> <span>♦</span> ♣</div>
+      <h2>Main menu</h2>
+      <p class="season-line" id="seasonLine"></p>
     </div>
-    <form id="authForm">
-      <!-- Sign in shows Username only; Create account shows Username + Email.
-           account.js swaps the rows (and their "required" flags) in setAuthMode. -->
-      <label id="idRow">Username
-        <input id="authId" required autocomplete="username" autocapitalize="none" spellcheck="false">
-      </label>
-      <label id="nameRow" class="hidden">Username
-        <input id="authName" maxlength="16" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="3-16 letters, numbers or _">
-      </label>
-      <label id="emailRow" class="hidden">Email <small>(only used to reset your password)</small>
-        <input id="authEmail" type="email" autocomplete="email">
-      </label>
-      <label>Password
-        <input id="authPass" type="password" required minlength="6" autocomplete="current-password">
-      </label>
-      <label id="ageRow" class="check hidden"><input type="checkbox" id="authAge"> I am 13 or older</label>
-      <p class="auth-error" id="authError" role="alert"></p>
-      <button class="btn deal" id="authSubmit" type="submit">Sign in</button>
-      <button type="button" class="linkbtn" id="authForgot">Forgot password?</button>
-    </form>
-    <div class="auth-or"><span>or</span></div>
-    <button type="button" class="btn google" id="authGoogle">Continue with Google</button>
-    <p class="hint">Guests can play too. An account just saves your chips and stats.</p>
-  </dialog>
 
-  <!-- Shown to Google users (or old accounts) who haven't picked a username yet -->
-  <dialog id="nameDialog">
-    <form method="dialog" class="auth-close"><button aria-label="Close">✕</button></form>
-    <h2>Pick a username</h2>
-    <form id="nameForm">
-      <label>Username
-        <input id="nameInput" required maxlength="16" autocapitalize="none" spellcheck="false" placeholder="3-16 letters, numbers or _">
-      </label>
-      <p class="auth-error" id="nameError" role="alert"></p>
-      <button class="btn deal" type="submit">Save username</button>
-    </form>
-  </dialog>
-
-  <main class="layout">
-    <section>
-      <!-- The table. Seats and bet chips are added here by game.js -->
-      <div class="table-wrap" id="tableWrap">
-        <div class="felt">
-          <div class="center">
-            <div class="pot hidden" id="pot"><span class="pot-icon"></span>Pot <b id="potAmt">0</b></div>
-            <div class="board" id="board"></div>
-            <div class="message" id="message">Press “Deal” to start</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tutorial coach: only shown in tutorial mode (?tutorial) -->
-      <div class="coach hidden" id="coach">
-        <div class="coach-head"><b id="coachTitle"></b><span id="coachStep"></span></div>
-        <p id="coachText"></p>
-        <div class="coach-btns">
-          <button class="btn deal small" id="coachNext">Next</button>
-          <a class="coach-exit" href="./">Exit tutorial</a>
-        </div>
-      </div>
-
-      <!-- Your controls -->
-      <div class="controls">
-        <div class="controls-top">
-          <div class="myhand" id="myHand"></div>
-          <button class="btn deal" id="btnDeal">Deal</button>
-        </div>
-        <div class="actions">
-          <button class="btn fold" id="btnFold" disabled>Fold</button>
-          <button class="btn call" id="btnCall" disabled>Check</button>
-          <div class="raise-box" id="raiseBox">
-            <div class="quick">
-              <button data-q="0.5" disabled>½ Pot</button>
-              <button data-q="0.75" disabled>¾ Pot</button>
-              <button data-q="1" disabled>Pot</button>
-              <button data-q="all" disabled>All-in</button>
-            </div>
-            <div class="raise-row">
-              <input type="range" id="raiseSlider" min="0" max="0" value="0" disabled>
-              <input type="number" id="raiseInput" min="0" disabled>
-            </div>
-            <button class="btn raise" id="btnRaise" disabled>Raise</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <aside class="side">
-      <div class="panel">
-        <h2>Players</h2>
-        <ul class="roster" id="roster"></ul>
-        <div class="add-bot">
-          <select id="botSelect"></select>
-          <button class="btn small" id="btnAddBot">Add bot</button>
-        </div>
-        <p class="hint" id="botDesc"></p>
-      </div>
-
-      <!-- <details> gives us a built-in open/close toggle with no JS.
-           Players and Hand Rankings are open; Settings and Log start closed. -->
-      <details class="panel" id="rankingsPanel" open>
-        <summary>Hand Rankings <small>(best to worst)</small></summary>
-        <ol class="rankings" id="rankings"></ol>
-      </details>
-
-      <details class="panel" id="profilePanel">
-        <summary>Your Profile</summary>
-        <div id="profileBody"></div>
-      </details>
-
-      <details class="panel" id="settingsPanel">
-        <summary>Settings</summary>
-        <label>Blinds
-          <select id="optSb">
-            <option value="5">5 / 10</option>
-            <option value="10" selected>10 / 20</option>
-            <option value="25">25 / 50</option>
-            <option value="50">50 / 100</option>
-          </select>
-        </label>
-        <label>Starting chips
-          <select id="optStack">
-            <option value="500">500</option>
-            <option value="1000" selected>1,000</option>
-            <option value="2000">2,000</option>
-            <option value="5000">5,000</option>
-          </select>
-        </label>
-        <label>Bot speed
-          <select id="optSpeed">
-            <option value="0.3">Fast</option>
-            <option value="1" selected>Normal</option>
-            <option value="1.8">Slow</option>
-          </select>
-        </label>
-        <label class="check"><input type="checkbox" id="optAuto"> Auto-deal next hand</label>
-        <label class="check"><input type="checkbox" id="optRebuy" checked> Bots rebuy when busted</label>
-      </details>
-
-      <details class="panel" id="logPanel">
-        <summary>Log</summary>
-        <ul class="log" id="log"></ul>
-      </details>
-    </aside>
+    <nav class="menu-grid">
+      <a class="menu-card" href="play.html">
+        <span class="mc-icon">🃏</span><b>Singleplayer</b><small>Play against bots you choose</small>
+      </a>
+      <a class="menu-card" href="play.html?tutorial">
+        <span class="mc-icon">🎓</span><b>Tutorial</b><small>Learn the game in 7 quick steps</small>
+      </a>
+      <!-- Multiplayer isn't built yet: a disabled button, so clicking does nothing -->
+      <button class="menu-card" type="button" disabled>
+        <span class="mc-icon">🌐</span><b>Multiplayer</b><small>Coming soon</small>
+      </button>
+      <a class="menu-card" href="leaderboard.html">
+        <span class="mc-icon">🏆</span><b>Leaderboard</b><small>Weekly season and all-time rating</small>
+      </a>
+      <a class="menu-card" href="account.html">
+        <span class="mc-icon">👤</span><b>Account</b><small>Your stats, rating and season</small>
+      </a>
+      <a class="menu-card" href="settings.html">
+        <span class="mc-icon">⚙️</span><b>Settings</b><small>Blinds, speed and more</small>
+      </a>
+    </nav>
   </main>
 
-  <!-- Order matters: game.js uses functions from the other two -->
-  <script src="poker.js"></script>
-  <script src="bots.js"></script>
-  <script src="game.js"></script>
+  <script src="common.js"></script>
+  <script src="season.js"></script>
   <script src="account.js"></script>
-  <!-- Firebase: config first (plain script), then auth.js (module that loads Firebase from Google's CDN) -->
+  <script src="menu.js"></script>
   <script src="firebase-config.js"></script>
   <script type="module" src="auth.js"></script>
 </body>

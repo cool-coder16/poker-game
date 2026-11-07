@@ -1,54 +1,87 @@
-// account.js — sign-in dialog, profile panel, and the glue between Firebase (auth.js) and the game.
-// Loaded after game.js, so it can use the game's globals ($, roster, cfg, fmt, log, ...).
+// account.js — sign-in dialogs and the header bar. Shared by every page (needs common.js + season.js).
+// Pages that care who is signed in call onAuth(fn); it runs now (if already known) and on every change.
 
 let currentUser = null;   // Firebase user, or null when playing as a guest
-let profile = null;       // { displayName, chips, handsPlayed, handsWon, biggestPot }
-let authDirty = false;    // you signed in/out mid-hand: apply it when the next hand starts
+let profile = null;       // see zeroStats() in auth.js for the fields
+let authKnown = false;    // false until Firebase has told us whether someone is signed in
+const authListeners = [];
 
-// ---------- Game <-> account glue ----------
-// Put your saved name and chips on your seat (or go back to "You" as a guest).
-function syncProfileToGame() {
-  if (handActive) { authDirty = true; return; }   // never change seats in the middle of a hand
-  authDirty = false;
-  const me = roster[0];
-  if (currentUser && profile) {
-    me.name = profile.displayName;
-    me.chips = profile.chips > 0 ? profile.chips : cfg.startChips;   // busted last time: rebuy
-  } else {
-    me.name = 'You';
-    me.chips = cfg.startChips;
-  }
-  buildTable(roster);
-  renderRoster();
-}
-
-// game.js calls this at the start of every hand
-function applyPendingProfile() {
-  if (authDirty) syncProfileToGame();
-}
-
-// game.js calls this at the end of every hand: update stats and save them
-function recordHandResult() {
-  if (!currentUser || !profile || authDirty) return;
-  profile.chips = roster[0].chips;
-  profile.handsPlayed++;
-  if (humanWinAmount > 0) {
-    profile.handsWon++;
-    profile.biggestPot = Math.max(profile.biggestPot, humanWinAmount);
-  }
-  renderProfilePanel();
-  window.pokerAuth.saveProfile(profile).catch(err => log('Could not save your progress: ' + err.message));
+function onAuth(fn) {
+  authListeners.push(fn);
+  if (authKnown) fn(currentUser, profile);
 }
 
 // auth.js calls this whenever sign-in state changes
-window.onAuthChanged = (user, prof) => {
+window.onAuthChanged = async (user, prof) => {
   currentUser = user;
   profile = prof;
-  if (!tutorial) syncProfileToGame();   // the tutorial table is separate: leave it alone
+  if (user && prof) await ensureSeason();
+  authKnown = true;
   renderAuthBar();
-  renderProfilePanel();
-  if (user && !prof.username && !tutorial) openNameDialog();   // Google users pick a username here
+  authListeners.forEach(fn => fn(user, prof));
+  // Google users pick a username (but don't interrupt the tutorial; `tutorial` only exists on play.html)
+  const inTutorial = typeof tutorial !== 'undefined' && tutorial;
+  if (user && !prof.username && !inTutorial) openNameDialog();
 };
+
+// New week since you last played? Score last week and reset your season numbers (see rollSeason in auth.js)
+async function ensureSeason() {
+  if (profile.season === seasonId()) return;
+  try {
+    Object.assign(profile, await window.pokerAuth.rollSeason(profile));
+  } catch (err) {
+    console.error('Could not start the new season', err);
+  }
+}
+
+// ---------- Dialogs (the same markup on every page, so it lives here once) ----------
+// This is fixed text we wrote ourselves, never user input, so innerHTML is safe here.
+document.body.insertAdjacentHTML('beforeend', `
+  <dialog id="authDialog">
+    <form method="dialog" class="auth-close"><button aria-label="Close">✕</button></form>
+    <h2>Welcome to Poker Night</h2>
+    <div class="auth-tabs">
+      <button type="button" id="tabIn" class="active">Sign in</button>
+      <button type="button" id="tabUp">Create account</button>
+    </div>
+    <form id="authForm">
+      <!-- Sign in shows Username only; Create account shows Username + Email.
+           setAuthMode swaps the rows (and their "required" flags). -->
+      <label id="idRow">Username
+        <input id="authId" required autocomplete="username" autocapitalize="none" spellcheck="false">
+      </label>
+      <label id="nameRow" class="hidden">Username
+        <input id="authName" maxlength="16" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="3-16 letters, numbers or _">
+      </label>
+      <label id="emailRow" class="hidden">Email <small>(only used to reset your password)</small>
+        <input id="authEmail" type="email" autocomplete="email">
+      </label>
+      <label>Password
+        <input id="authPass" type="password" required minlength="6" autocomplete="current-password">
+      </label>
+      <label id="ageRow" class="check hidden"><input type="checkbox" id="authAge"> I am 13 or older</label>
+      <p class="auth-error" id="authError" role="alert"></p>
+      <button class="btn deal" id="authSubmit" type="submit">Sign in</button>
+      <button type="button" class="linkbtn" id="authForgot">Forgot password?</button>
+    </form>
+    <div class="auth-or"><span>or</span></div>
+    <button type="button" class="btn google" id="authGoogle">Continue with Google</button>
+    <p class="hint">Guests can play too. An account saves your chips and puts you on the leaderboard.</p>
+  </dialog>
+
+  <!-- Shown to Google users (or old accounts) who haven't picked a username yet -->
+  <dialog id="nameDialog">
+    <form method="dialog" class="auth-close"><button aria-label="Close">✕</button></form>
+    <h2>Pick a username</h2>
+    <form id="nameForm">
+      <label>Username
+        <input id="nameInput" required maxlength="16" autocapitalize="none" spellcheck="false" placeholder="3-16 letters, numbers or _">
+      </label>
+      <p class="auth-error" id="nameError" role="alert"></p>
+      <button class="btn deal" type="submit">Save username</button>
+    </form>
+  </dialog>
+`);
 
 // ---------- Header: sign in / account ----------
 // Names come from users, so everything below uses textContent (never innerHTML).
@@ -63,8 +96,9 @@ function renderAuthBar() {
     bar.appendChild(btn);
     return;
   }
-  const who = document.createElement('span');
+  const who = document.createElement('a');   // a link to your account page
   who.className = 'who';
+  who.href = 'account.html';
   const dot = document.createElement('span');
   dot.className = 'who-dot';
   dot.textContent = (profile.displayName[0] || '?').toUpperCase();
@@ -76,49 +110,6 @@ function renderAuthBar() {
   out.textContent = 'Sign out';
   out.onclick = () => window.pokerAuth.signOut();
   bar.append(who, out);
-}
-
-// ---------- Sidebar: profile panel ----------
-function renderProfilePanel() {
-  const body = $('profileBody');
-  body.textContent = '';
-  if (!currentUser || !profile) {
-    const p = document.createElement('p');
-    p.className = 'hint';
-    p.textContent = "You're playing as a guest. Sign in to save your chips and stats.";
-    const btn = document.createElement('button');
-    btn.className = 'btn small';
-    btn.textContent = 'Sign in / Create account';
-    btn.onclick = openAuthDialog;
-    body.append(p, btn);
-    return;
-  }
-  const rate = profile.handsPlayed ? Math.round((profile.handsWon / profile.handsPlayed) * 100) + '%' : '-';
-  const rows = [
-    ['Username', profile.username || '(not chosen yet)'],
-    ['Email', currentUser.email || '-'],
-    ['Chips', fmt(profile.chips)],
-    ['Hands played', fmt(profile.handsPlayed)],
-    ['Hands won', `${fmt(profile.handsWon)} (${rate})`],
-    ['Biggest pot won', fmt(profile.biggestPot)],
-  ];
-  const dl = document.createElement('dl');
-  dl.className = 'stats';
-  rows.forEach(([label, value]) => {
-    const dt = document.createElement('dt');
-    dt.textContent = label;
-    const dd = document.createElement('dd');
-    dd.textContent = value;
-    dl.append(dt, dd);
-  });
-  body.appendChild(dl);
-  if (!profile.username) {
-    const btn = document.createElement('button');
-    btn.className = 'btn small';
-    btn.textContent = 'Choose a username';
-    btn.onclick = openNameDialog;
-    body.appendChild(btn);
-  }
 }
 
 // ---------- Sign-in dialog ----------
@@ -145,8 +136,8 @@ function setAuthMode(mode) {
   $('authEmail').required = up;
   $('authAge').required = up;
   $('authForgot').classList.toggle('hidden', up);
-  $('authSubmit').textContent = mode === 'up' ? 'Create account' : 'Sign in';
-  $('authPass').autocomplete = mode === 'up' ? 'new-password' : 'current-password';
+  $('authSubmit').textContent = up ? 'Create account' : 'Sign in';
+  $('authPass').autocomplete = up ? 'new-password' : 'current-password';
   showAuthMessage('');
 }
 
@@ -234,9 +225,8 @@ $('nameForm').onsubmit = async e => {
     const name = await window.pokerAuth.chooseUsername($('nameInput').value, profile);
     profile.username = name;
     profile.displayName = name;
-    syncProfileToGame();
     renderAuthBar();
-    renderProfilePanel();
+    authListeners.forEach(fn => fn(currentUser, profile));   // let the page refresh itself
     $('nameDialog').close();
   } catch (ex) {
     err.textContent = friendlyError(ex);
@@ -245,4 +235,3 @@ $('nameForm').onsubmit = async e => {
 
 // Initial (signed-out) look until Firebase reports otherwise
 renderAuthBar();
-renderProfilePanel();

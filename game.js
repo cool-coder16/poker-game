@@ -2,9 +2,11 @@
 // Uses poker.js (cards, hand scoring) and bots.js (bot AI).
 
 // ---------- Settings & state ----------
-const cfg = { startChips: 1000, sb: 10, speed: 1, autoDeal: false, botRebuy: true };
+// Settings are chosen on settings.html and read here from localStorage (see common.js).
+// ($ and fmt also come from common.js, which loads first.)
+const cfg = loadSettings();
 const MAX_SEATS = 8;
-// Tutorial mode is switched on by opening the page as index.html?tutorial
+// Tutorial mode is switched on by opening the page as play.html?tutorial
 const tutorial = new URLSearchParams(location.search).has('tutorial');
 
 let roster = [];       // everyone at the table (including players waiting to join next hand)
@@ -21,13 +23,12 @@ let activeId = null;   // id of the player whose turn it is
 let markers = {};      // ids holding the dealer button / blinds
 let winnerIds = new Set();
 let humanWinAmount = 0;   // what you won this hand (0 if nothing); used for profile stats
+let humanStartChips = 0;  // your chips before the blinds went in; used to work out bb won this hand
 let humanResolve = null;   // set while we are waiting for you to click something
 let humanCtx = null;
 let nextId = 1;
 
-const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms * cfg.speed));   // scaled by the speed setting
-const fmt = n => n.toLocaleString();
 const winVerb = p => (p.isHuman ? "win" : "wins");   // "You win" vs "Rex wins"
 const bigBlind = () => cfg.sb * 2;
 const live = () => seated.filter(p => !p.folded);                    // still in the hand
@@ -295,14 +296,17 @@ const setMessage = t => { $('message').textContent = t; };
 async function startHand() {
   if (handActive) return;
   winnerIds = new Set();
-  applyPendingProfile();   // account.js: apply a sign-in/out that happened mid-hand
+  applyPendingProfile();   // game-account.js: apply a sign-in/out that happened mid-hand
 
   // Apply seat changes that were waiting for the hand boundary
   roster.filter(p => p.leaving).forEach(p => log(`${p.name} left the table.`));
   roster = roster.filter(p => !p.leaving);
   roster.forEach(p => { p.pending = false; });
   const me = roster[0];
-  if (me.chips <= 0) { me.chips = cfg.startChips; log(`You rebought for ${fmt(cfg.startChips)}.`); }
+  if (me.chips <= 0) {
+    me.chips = humanRebuyAmount();   // game-account.js: season rebuys are counted against your score
+    log(`You rebought for ${fmt(me.chips)}.`);
+  }
   roster.filter(p => !p.isHuman && p.chips <= 0).forEach(p => {
     if (cfg.botRebuy) { p.chips = cfg.startChips; log(`${p.name} rebought.`); }
     else { log(`${p.name} is out of chips.`); }
@@ -327,6 +331,7 @@ async function startHand() {
 async function playHand() {
   handNo++;
   humanWinAmount = 0;
+  humanStartChips = roster[0].chips;
   const n = seated.length;
   seated.forEach(p => Object.assign(p, {
     hole: [], bet: 0, totalBet: 0, folded: false, allIn: false, acted: false,
@@ -615,7 +620,7 @@ async function endHand() {
   $('btnCall').textContent = 'Check';
   renderRoster();
   update();
-  if (!tutorial) recordHandResult();   // account.js: update + save stats when signed in
+  if (!tutorial) recordHandResult();   // game-account.js: update + save stats when signed in
 
   const me = roster[0];
   const btn = $('btnDeal');
@@ -730,12 +735,6 @@ Object.entries(BOT_PROFILES).forEach(([key, p]) => {
 });
 const showBotDesc = () => { $('botDesc').textContent = BOT_PROFILES[$('botSelect').value].desc; };
 $('botSelect').onchange = showBotDesc;
-
-$('optSb').onchange = e => { cfg.sb = Number(e.target.value); };    // applies from the next hand
-$('optStack').onchange = e => { cfg.startChips = Number(e.target.value); };   // new bots / rebuys
-$('optSpeed').onchange = e => { cfg.speed = Number(e.target.value); };
-$('optAuto').onchange = e => { cfg.autoDeal = e.target.checked; };
-$('optRebuy').onchange = e => { cfg.botRebuy = e.target.checked; };
 
 // ---------- Start-up ----------
 const SUIT_LETTERS = ['s', 'h', 'd', 'c'];   // matches the order of SUIT_SYMBOLS in poker.js

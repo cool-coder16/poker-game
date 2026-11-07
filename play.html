@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Poker Night</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1><a href="index.html">♠ <span>Poker</span> Night</a></h1>
+    <div class="sub">Singleplayer</div>
+    <nav class="topnav">
+      <a class="tut-link" href="index.html">☰ Menu</a>
+      <a class="tut-link" id="tutLink" href="play.html?tutorial">🎓 Tutorial</a>
+    </nav>
+    <div class="auth-bar" id="authBar"></div>
+  </header>
+
+  <main class="layout">
+    <section>
+      <!-- The table. Seats and bet chips are added here by game.js -->
+      <div class="table-wrap" id="tableWrap">
+        <div class="felt">
+          <div class="center">
+            <div class="pot hidden" id="pot"><span class="pot-icon"></span>Pot <b id="potAmt">0</b></div>
+            <div class="board" id="board"></div>
+            <div class="message" id="message">Press “Deal” to start</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tutorial coach: only shown in tutorial mode (?tutorial) -->
+      <div class="coach hidden" id="coach">
+        <div class="coach-head"><b id="coachTitle"></b><span id="coachStep"></span></div>
+        <p id="coachText"></p>
+        <div class="coach-btns">
+          <button class="btn deal small" id="coachNext">Next</button>
+          <a class="coach-exit" href="index.html">Exit tutorial</a>
+        </div>
+      </div>
+
+      <!-- Your controls -->
+      <div class="controls">
+        <div class="controls-top">
+          <div class="myhand" id="myHand"></div>
+          <button class="btn deal" id="btnDeal">Deal</button>
+        </div>
+        <div class="actions">
+          <button class="btn fold" id="btnFold" disabled>Fold</button>
+          <button class="btn call" id="btnCall" disabled>Check</button>
+          <div class="raise-box" id="raiseBox">
+            <div class="quick">
+              <button data-q="0.5" disabled>½ Pot</button>
+              <button data-q="0.75" disabled>¾ Pot</button>
+              <button data-q="1" disabled>Pot</button>
+              <button data-q="all" disabled>All-in</button>
+            </div>
+            <div class="raise-row">
+              <input type="range" id="raiseSlider" min="0" max="0" value="0" disabled>
+              <input type="number" id="raiseInput" min="0" disabled>
+            </div>
+            <button class="btn raise" id="btnRaise" disabled>Raise</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel">
+        <h2>Players</h2>
+        <ul class="roster" id="roster"></ul>
+        <div class="add-bot">
+          <select id="botSelect"></select>
+          <button class="btn small" id="btnAddBot">Add bot</button>
+        </div>
+        <p class="hint" id="botDesc"></p>
+      </div>
+
+      <!-- <details> gives us a built-in open/close toggle with no JS.
+           Players and Hand Rankings are open; the Log starts closed. -->
+      <details class="panel" id="rankingsPanel" open>
+        <summary>Hand Rankings <small>(best to worst)</small></summary>
+        <ol class="rankings" id="rankings"></ol>
+      </details>
+
+      <details class="panel" id="logPanel">
+        <summary>Log</summary>
+        <ul class="log" id="log"></ul>
+      </details>
+    </aside>
+  </main>
+
+  <!-- Order matters: shared helpers first. game.js goes last because in tutorial mode it starts a hand
+       the moment it loads, and that hand calls functions from game-account.js. -->
+  <script src="common.js"></script>
+  <script src="season.js"></script>
+  <script src="poker.js"></script>
+  <script src="bots.js"></script>
+  <script src="account.js"></script>
+  <script src="game-account.js"></script>
+  <script src="game.js"></script>
+  <!-- Firebase: config first (plain script), then auth.js (module that loads Firebase from Google's CDN) -->
+  <script src="firebase-config.js"></script>
+  <script type="module" src="auth.js"></script>
+</body>
+</html>
