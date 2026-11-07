@@ -2,13 +2,23 @@
 //
 // Singleplayer is a "run": you start with 1,000 chips, there are no rebuys, and the run ends the
 // moment anyone at the table goes bankrupt. Your run score is the chips you have at that moment
-// (0 if it was you). A "season" is one week (Monday 00:00 UTC to the next Monday): your season
-// score is your BEST run that week. Play at least 30 hands in the week to qualify; the final
-// ranking turns into rating points that add up forever.
+// (0 if it was you). Blinds rise every 10 hands so a run can't drag on forever.
+// A "season" is one week (Monday 00:00 UTC to the next Monday): your season score is your BEST
+// run that week. Play at least 30 hands in the week to qualify; the final ranking turns into
+// rating points that add up forever.
 
 const RUN_START_CHIPS = 1000;
-const RUN_SB = 10;            // runs always use 10/20 blinds, so every score is comparable
+// Blinds rise during a run so it always finishes: the small blind steps up every 10 hands
+// (the big blind is double). Everyone gets the same schedule, so every score is comparable.
+const RUN_BLINDS = [10, 15, 25, 50, 75, 100, 150, 200, 300, 400, 600, 800, 1000];
+const RUN_HANDS_PER_LEVEL = 10;
 const SEASON_MIN_HANDS = 30;
+
+// Small blind for hand number `handNumber` (1 = first hand of the run); stays at the top level once reached
+function runSmallBlind(handNumber) {
+  const level = Math.floor((handNumber - 1) / RUN_HANDS_PER_LEVEL);
+  return RUN_BLINDS[Math.min(level, RUN_BLINDS.length - 1)];
+}
 
 // Season id like "2026-W45" (ISO week number, in UTC so everyone's week changes at the same moment)
 function seasonId(date = new Date()) {

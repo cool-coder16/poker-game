@@ -17,7 +17,7 @@ const tutorial = lessonName !== null;
 const practice = !tutorial && params.get('mode') === 'practice';
 const runMode = !tutorial && !practice;
 // Fixed rules so every run (and every lesson) is comparable
-if (runMode) Object.assign(cfg, { sb: RUN_SB, startChips: RUN_START_CHIPS, botRebuy: false });
+if (runMode) Object.assign(cfg, { sb: runSmallBlind(1), startChips: RUN_START_CHIPS, botRebuy: false });
 if (tutorial) Object.assign(cfg, { sb: 10, startChips: 1000 });
 
 let roster = [];       // everyone at the table (including players waiting to join next hand)
@@ -342,8 +342,19 @@ async function startHand() {
   endHand();
 }
 
+// Runs only: raise the blinds when a new level starts, and tell the player what they are now
+function setRunBlinds() {
+  const sb = runSmallBlind(handNo);
+  if (sb !== cfg.sb) { cfg.sb = sb; log(`Blinds go up to ${fmt(sb)}/${fmt(sb * 2)}!`, 'hand'); }
+  const toNext = RUN_HANDS_PER_LEVEL - ((handNo - 1) % RUN_HANDS_PER_LEVEL);
+  const atTop = sb === RUN_BLINDS[RUN_BLINDS.length - 1];
+  $('modeNote').textContent = MODE_NOTES.run + ` Blinds now ${fmt(sb)}/${fmt(sb * 2)}`
+    + (atTop ? ' (the highest level).' : `, going up in ${toNext} hand${toNext === 1 ? '' : 's'}.`);
+}
+
 async function playHand() {
   handNo++;
+  if (runMode) setRunBlinds();
   humanWinAmount = 0;
   humanStartChips = roster[0].chips;
   const n = seated.length;
@@ -721,7 +732,7 @@ showBotDesc();
 
 // The note under the header explains the rules of whichever mode you're in
 const MODE_NOTES = {
-  run: '🏆 High-score run: you start with 1,000 chips and there are no rebuys. The game ends the moment anyone goes bankrupt, and your score is the chips you have left (0 if it was you).',
+  run: '🏆 High-score run: you start with 1,000 chips and there are no rebuys. The game ends the moment anyone goes bankrupt, and your score is the chips you have left (0 if it was you). Blinds start at 10/20 and rise every 10 hands.',
   practice: '🎈 Practice: rebuy any time, add any bots, change any setting. Nothing here counts toward your score.',
 };
 
