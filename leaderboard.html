@@ -19,7 +19,8 @@
     <div class="board-tabs" id="boardTabs">
       <button type="button" data-tab="week" class="active">This week</button>
       <button type="button" data-tab="last">Last week</button>
-      <button type="button" data-tab="rating">All-time rating</button>
+      <button type="button" data-tab="high">High scores</button>
+      <button type="button" data-tab="rating">Rating</button>
     </div>
     <p class="board-info" id="boardInfo"></p>
     <div class="table-scroll"><table class="lb" id="board"></table></div>
@@ -28,11 +29,13 @@
     <details class="panel how" open>
       <summary>How scoring works</summary>
       <ul>
-        <li><b>Weekly season.</b> Every Monday (UTC) everyone restarts with 1,000 chips. Your <b>score</b> is your chips minus 1,000 for each rebuy, so rebuying can't be used to get free tries.</li>
+        <li><b>Singleplayer runs.</b> A run starts with 1,000 chips, has no rebuys, and ends the moment anyone at the table goes bankrupt. Your <b>run score</b> is the chips you have left (0 if you went bankrupt).</li>
+        <li><b>Weekly season.</b> Every Monday (UTC) the season resets. Your season score is your <b>best run</b> that week.</li>
         <li><b>Qualifying.</b> Play at least 30 hands in the week to get a rank. Players under 30 hands are listed below the line.</li>
-        <li><b>bb/100.</b> Big blinds won per 100 hands. It is the standard poker skill number, and it stays fair whatever blind size you pick.</li>
+        <li><b>bb/100.</b> Big blinds won per 100 hands. It is the standard poker skill number.</li>
         <li><b>Rating points.</b> When a week ends, your final place turns into points that add up forever:
           1st = 100, 2nd = 70, 3rd = 50, 4th-10th = 30, everyone else who qualified = 10.</li>
+        <li><b>High scores.</b> Your single best run ever, whatever the week. Practice mode never counts.</li>
         <li><b>Fair play.</b> Chips are play money only; there are no prizes that cost or pay real money.
           Games run in your browser for now, so the board works on the honor system until multiplayer is server-run.</li>
       </ul>

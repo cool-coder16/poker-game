@@ -1,11 +1,13 @@
 // season.js — the rules of the weekly competition. Plain functions, no Firebase, no page code.
 //
-// A "season" is one week (Monday 00:00 UTC to the next Monday). Everyone starts it with
-// 1,000 chips. Your season score is chips minus 1,000 for every rebuy, so busting and
-// rebuying can't be used to farm free tries. Finish the week with at least 30 hands played to
-// qualify; the final ranking turns into rating points that add up forever.
+// Singleplayer is a "run": you start with 1,000 chips, there are no rebuys, and the run ends the
+// moment anyone at the table goes bankrupt. Your run score is the chips you have at that moment
+// (0 if it was you). A "season" is one week (Monday 00:00 UTC to the next Monday): your season
+// score is your BEST run that week. Play at least 30 hands in the week to qualify; the final
+// ranking turns into rating points that add up forever.
 
-const SEASON_START_CHIPS = 1000;
+const RUN_START_CHIPS = 1000;
+const RUN_SB = 10;            // runs always use 10/20 blinds, so every score is comparable
 const SEASON_MIN_HANDS = 30;
 
 // Season id like "2026-W45" (ISO week number, in UTC so everyone's week changes at the same moment)
@@ -33,9 +35,6 @@ function timeLeftText(date = new Date()) {
   if (d > 0) return `${d}d ${h}h`;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
-
-// Season score used for ranking
-const seasonScore = (chips, rebuys) => chips - SEASON_START_CHIPS * rebuys;
 
 // Rating points for a final season placement among qualified players
 function placementPoints(rank) {

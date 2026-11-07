@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tutorials · Poker Night</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1><a href="index.html">♠ <span>Poker</span> Night</a></h1>
+    <div class="sub">Tutorials</div>
+    <nav class="topnav"><a class="tut-link" href="index.html">☰ Menu</a></nav>
+    <div class="auth-bar" id="authBar"></div>
+  </header>
+
+  <main class="page">
+    <div class="hero">
+      <h2>Pick a tutorial</h2>
+      <p class="season-line">Both use scripted hands against a practice opponent. Nothing here counts toward your score.</p>
+    </div>
+
+    <nav class="menu-grid">
+      <a class="menu-card" href="play.html?lesson=basic">
+        <span class="mc-icon">📘</span><b>Basic tutorial</b>
+        <small>New to poker? One guided hand: the cards, the blinds, betting, and how you win. About 3 minutes.</small>
+      </a>
+      <a class="menu-card" href="play.html?lesson=advanced">
+        <span class="mc-icon">🧠</span><b>Advanced tutorial</b>
+        <small>Think like a player: outs, pot odds, equity, bluffing and reading bets, with live odds on screen. Four short lessons.</small>
+      </a>
+    </nav>
+  </main>
+
+  <script src="common.js"></script>
+  <script src="season.js"></script>
+  <script src="account.js"></script>
+  <script src="firebase-config.js"></script>
+  <script type="module" src="auth.js"></script>
+</body>
+</html>

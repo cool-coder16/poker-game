@@ -114,7 +114,8 @@ dialog .hint { text-align: center; margin-top: 14px; }
 body[data-tut="call"] #btnCall,
 body[data-tut="raise"] #raiseBox,
 body[data-tut="rankings"] #rankingsPanel,
-body[data-tut="pot"] #pot { animation: tutpulse 1.3s ease-in-out infinite; }
+body[data-tut="pot"] #pot,
+body[data-tut="odds"] #odds { animation: tutpulse 1.3s ease-in-out infinite; }
 body[data-tut="raise"] #raiseBox { border-radius: 12px; }
 
 /* Tutorial table is fixed: no adding bots or changing settings */
@@ -442,3 +443,22 @@ table.lb tr.waiting td { opacity: 0.5; }
 .settings-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
 .saved { color: #3ddc84; font-size: 0.85rem; }
 #authForm label.check { flex-direction: row; align-items: center; gap: 8px; }
+
+/* ---------- Game modes ---------- */
+.mode-note { max-width: 1000px; margin: 0 auto 14px; padding: 10px 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; line-height: 1.45; text-align: center; }
+/* A run has a fixed table: no adding or removing bots */
+.run .add-bot, .run #botDesc, .run .roster .x { display: none; }
+
+/* Odds panel inside the tutorial coach card */
+.odds { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: #0e131e; border: 1px solid var(--border); font-size: 0.88rem; line-height: 1.5; display: grid; gap: 4px; }
+.odds b { color: var(--gold); }
+
+/* Game-over dialog */
+#runOver { text-align: center; }
+.run-reason { margin: 0 0 6px; color: var(--muted); }
+.run-score { font-size: 3rem; font-weight: 800; color: var(--gold); line-height: 1.1; }
+.run-label { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.run-stats { margin: 12px 0 4px; font-weight: 600; }
+.run-result { margin: 0 0 16px; color: var(--muted); font-size: 0.85rem; min-height: 1.2em; }
+.run-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.run-actions a.btn { text-decoration: none; display: inline-flex; align-items: center; }

@@ -10,13 +10,15 @@
 <body>
   <header>
     <h1><a href="index.html">♠ <span>Poker</span> Night</a></h1>
-    <div class="sub">Singleplayer</div>
+    <div class="sub" id="pageSub">No-limit Texas Hold'em</div>
     <nav class="topnav">
       <a class="tut-link" href="index.html">☰ Menu</a>
-      <a class="tut-link" id="tutLink" href="play.html?tutorial">🎓 Tutorial</a>
+      <a class="tut-link" id="tutLink" href="tutorials.html">🎓 Tutorials</a>
     </nav>
     <div class="auth-bar" id="authBar"></div>
   </header>
+
+  <p class="mode-note hidden" id="modeNote"></p>
 
   <main class="layout">
     <section>
@@ -35,9 +37,10 @@
       <div class="coach hidden" id="coach">
         <div class="coach-head"><b id="coachTitle"></b><span id="coachStep"></span></div>
         <p id="coachText"></p>
+        <div class="odds hidden" id="odds"></div>
         <div class="coach-btns">
           <button class="btn deal small" id="coachNext">Next</button>
-          <a class="coach-exit" href="index.html">Exit tutorial</a>
+          <a class="coach-exit" href="tutorials.html">Exit tutorial</a>
         </div>
       </div>
 
@@ -92,14 +95,30 @@
     </aside>
   </main>
 
+  <!-- Shown when a high-score run ends (game.js fills in the blanks) -->
+  <dialog id="runOver">
+    <h2>Game over</h2>
+    <p class="run-reason" id="runReason"></p>
+    <div class="run-score" id="runScore"></div>
+    <div class="run-label">final score</div>
+    <p class="run-stats" id="runStats"></p>
+    <p class="run-result" id="runResult"></p>
+    <div class="run-actions">
+      <button class="btn deal" type="button" onclick="location.reload()">Play again</button>
+      <a class="btn small" href="leaderboard.html">Leaderboard</a>
+      <a class="btn small" href="index.html">Menu</a>
+    </div>
+  </dialog>
+
   <!-- Order matters: shared helpers first. game.js goes last because in tutorial mode it starts a hand
-       the moment it loads, and that hand calls functions from game-account.js. -->
+       the moment it loads, and that hand calls functions from game-account.js and lessons.js. -->
   <script src="common.js"></script>
   <script src="season.js"></script>
   <script src="poker.js"></script>
   <script src="bots.js"></script>
   <script src="account.js"></script>
   <script src="game-account.js"></script>
+  <script src="lessons.js"></script>
   <script src="game.js"></script>
   <!-- Firebase: config first (plain script), then auth.js (module that loads Firebase from Google's CDN) -->
   <script src="firebase-config.js"></script>

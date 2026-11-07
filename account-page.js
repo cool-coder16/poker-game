@@ -40,7 +40,7 @@ function renderAccount() {
     btn.onclick = openAuthDialog;
     box.append(
       el('h2', '', 'Your account'),
-      el('p', '', 'Sign in to save your chips, climb the weekly leaderboard and build your rating.'),
+      el('p', '', 'Sign in to save your scores, climb the weekly leaderboard and build your rating.'),
       btn,
     );
     root.appendChild(box);
@@ -69,6 +69,7 @@ function renderAccount() {
       tile('Rating points', fmt(profile.points), 'from season placements'),
       tile('Seasons played', fmt(profile.seasons), `${SEASON_MIN_HANDS}+ hands each`),
       tile('Best finish', profile.bestRank ? '#' + profile.bestRank : '-'),
+      tile('High score', fmt(profile.high), 'best run ever'),
     )));
 
   // This season
@@ -78,12 +79,11 @@ function renderAccount() {
   root.appendChild(section(`This season · ${seasonLabel(seasonId())} · ends in ${timeLeftText()}`,
     tiles(
       rankTile,
-      tile('Score', fmt(seasonScore(profile.chips, profile.rebuys)), 'chips minus rebuys'),
-      tile('Chips', fmt(profile.chips)),
+      tile('Best run', fmt(profile.best), 'chips left when a run ended'),
+      tile('Runs finished', fmt(profile.runs)),
       tile('Skill (bb/100)', hands ? signed(bbPer100(profile.sBb, hands)) : '-', 'big blinds won per 100 hands'),
       tile('Hands', `${fmt(hands)} / ${SEASON_MIN_HANDS}`, hands >= SEASON_MIN_HANDS ? 'qualified' : 'to qualify'),
       tile('Win rate', winRate),
-      tile('Rebuys', fmt(profile.rebuys), 'each costs 1,000 score'),
     )));
   fillRank(rankTile);
 
@@ -103,7 +103,7 @@ function renderAccount() {
 function historyTable(history) {
   const table = el('table', 'lb');
   const head = document.createElement('tr');
-  ['Season', 'Place', 'Points', 'Score'].forEach(t => head.appendChild(el('th', '', t)));
+  ['Season', 'Place', 'Points', 'Best run'].forEach(t => head.appendChild(el('th', '', t)));
   table.appendChild(head);
   history.forEach(h => {
     const tr = document.createElement('tr');

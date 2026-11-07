@@ -17,6 +17,7 @@ async function showTab(name) {
   try {
     await whenAuthReady();
     if (name === 'rating') rows = await window.pokerAuth.loadRatings(100);
+    else if (name === 'high') rows = await window.pokerAuth.loadHighScores(100);
     else rows = await window.pokerAuth.loadSeason(name === 'week' ? seasonId() : lastWeekId(), 100);
   } catch (err) {
     console.error(err);
@@ -56,21 +57,24 @@ function draw() {
     week: `${seasonLabel(seasonId())} · ends in ${timeLeftText()}`,
     last: `Final standings, ${seasonLabel(lastWeekId())}`,
     rating: 'Career rating points from season placements',
+    high: 'Best single run ever (chips left when the run ended)',
   }[tab];
 
   if (loadFailed) { msg.textContent = "Couldn't load the leaderboard. Check your connection and try again."; return; }
   if (rows === null) { msg.textContent = 'Loading…'; return; }
   if (rows.length === 0) {
-    msg.textContent = tab === 'rating'
-      ? 'No ratings yet. Ratings appear after the first season ends.'
+    msg.textContent = tab === 'rating' ? 'No ratings yet. Ratings appear after the first season ends.'
+      : tab === 'high' ? 'No finished runs yet. Finish a Singleplayer run to get on the board!'
       : 'Nobody has played this week yet. Be the first!';
     return;
   }
-  if (tab === 'rating') drawRatings(table); else drawSeason(table);
+  if (tab === 'rating') drawRatings(table);
+  else if (tab === 'high') drawHighScores(table);
+  else drawSeason(table);
 }
 
 function drawSeason(table) {
-  table.appendChild(headRow(['#', 'Player', 'Score', 'Hands', 'bb/100', tab === 'week' ? 'Pts if it ended now' : 'Pts']));
+  table.appendChild(headRow(['#', 'Player', 'Best run', 'Runs', 'Hands', 'bb/100', tab === 'week' ? 'Pts if it ended now' : 'Pts']));
   const qualified = rows.filter(r => r.hands >= SEASON_MIN_HANDS);
   const waiting = rows.filter(r => r.hands < SEASON_MIN_HANDS);
 
@@ -86,6 +90,7 @@ function addSeasonRow(table, r, rank) {
   cell(tr, rank ? medal(rank) : '-', 'rank');
   cell(tr, r.username, 'name');
   cell(tr, fmt(r.score));
+  cell(tr, fmt(r.runs));
   cell(tr, fmt(r.hands));
   cell(tr, signed(bbPer100(r.bb, r.hands)));
   cell(tr, rank ? '+' + placementPoints(rank) : `${SEASON_MIN_HANDS - r.hands} more hands`, 'pts');
@@ -101,6 +106,18 @@ function drawRatings(table) {
     cell(tr, r.username, 'name');
     cell(tr, fmt(r.points));
     cell(tr, fmt(r.seasons));
+    table.appendChild(tr);
+  });
+}
+
+function drawHighScores(table) {
+  table.appendChild(headRow(['#', 'Player', 'Best run']));
+  rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    if (currentUser && r.uid === currentUser.uid) tr.className = 'me';
+    cell(tr, medal(i + 1), 'rank');
+    cell(tr, r.username, 'name');
+    cell(tr, fmt(r.high));
     table.appendChild(tr);
   });
 }

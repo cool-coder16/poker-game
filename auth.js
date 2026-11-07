@@ -24,13 +24,13 @@ const db = getFirestore(app);
 let signingUp = false;   // true while signUp() runs, so onAuthStateChanged doesn't race with it
 
 // ---------- What we store about a player (users/<uid>) ----------
-// Lifetime: handsPlayed, handsWon, biggestPot.
-// This season: season (id), chips, sHands, sWins, sBb (net big blinds won), rebuys.
+// Lifetime: handsPlayed, handsWon, biggestPot, high (best run score ever).
+// This season: season (id), sHands, sWins, sBb (net big blinds won), runs (finished), best (best run score).
 // Rating: points, seasons (played), bestRank, history (last 12 season results).
 function zeroStats(season) {
   return {
-    chips: SEASON_START_CHIPS, handsPlayed: 0, handsWon: 0, biggestPot: 0,
-    season, sHands: 0, sWins: 0, sBb: 0, rebuys: 0,
+    handsPlayed: 0, handsWon: 0, biggestPot: 0, high: 0,
+    season, sHands: 0, sWins: 0, sBb: 0, runs: 0, best: 0,
     points: 0, seasons: 0, bestRank: 0, history: [],
   };
 }
@@ -39,7 +39,6 @@ function zeroStats(season) {
 function statsOf(p) {
   const out = {};
   Object.keys(zeroStats(null)).forEach(k => { out[k] = p[k]; });
-  out.chips = Math.max(0, Math.floor(p.chips));
   return out;
 }
 
@@ -114,6 +113,13 @@ async function loadRatings(count = 100) {
   return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
 }
 
+// All-time best runs. Each row: { uid, username, points, seasons, high }
+async function loadHighScores(count = 100) {
+  const q = query(collection(db, 'ratings'), orderBy('high', 'desc'), limit(count));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(r => r.high > 0);
+}
+
 // Final placement among players who qualified (enough hands) in a finished season
 async function rankInSeason(id, uid) {
   const qualified = (await loadSeason(id, 200)).filter(r => r.hands >= SEASON_MIN_HANDS);
@@ -136,20 +142,20 @@ async function rollSeason(p) {
       points += earned;
       seasons += 1;
       bestRank = bestRank ? Math.min(bestRank, rank) : rank;
-      history.unshift({ season: p.season, rank, points: earned, score: seasonScore(p.chips, p.rebuys) });
+      history.unshift({ season: p.season, rank, points: earned, score: p.best });
     } else {
-      history.unshift({ season: p.season, rank: 0, points: 0, score: seasonScore(p.chips, p.rebuys) });   // didn't qualify
+      history.unshift({ season: p.season, rank: 0, points: 0, score: p.best });   // didn't qualify
     }
   }
 
   const fresh = {
-    season: now, chips: SEASON_START_CHIPS, sHands: 0, sWins: 0, sBb: 0, rebuys: 0,
+    season: now, sHands: 0, sWins: 0, sBb: 0, runs: 0, best: 0,
     points, seasons, bestRank, history: history.slice(0, 12),
   };
   const batch = writeBatch(db);
   batch.set(doc(db, 'users', user.uid), { ...fresh, updatedAt: serverTimestamp() }, { merge: true });
-  if (p.username && seasons > 0) {
-    batch.set(doc(db, 'ratings', user.uid), { username: p.username, points, seasons, updatedAt: serverTimestamp() });
+  if (p.username && (seasons > 0 || p.high > 0)) {
+    batch.set(doc(db, 'ratings', user.uid), { username: p.username, points, seasons, high: p.high || 0, updatedAt: serverTimestamp() });
   }
   await batch.commit();
   return fresh;
@@ -203,11 +209,12 @@ window.pokerAuth = {
     return name;
   },
 
-  rollSeason, loadSeason, loadRatings,
+  rollSeason, loadSeason, loadRatings, loadHighScores,
 
   // Saves progress after a hand: your private profile, plus your public line on this
-  // season's leaderboard. Rules only allow writing your own documents.
-  async saveProfile(p) {
+  // season's leaderboard. `runFinished` is true when a run just ended: then your all-time
+  // line (rating + high score) is updated too. Rules only allow writing your own documents.
+  async saveProfile(p, runFinished = false) {
     const user = auth.currentUser;
     if (!user) return;
     const batch = writeBatch(db);
@@ -216,11 +223,15 @@ window.pokerAuth = {
     }, { merge: true });
     if (p.username && p.season) {
       batch.set(doc(db, 'seasons', p.season, 'players', user.uid), {
-        username: p.username, chips: Math.max(0, Math.floor(p.chips)), rebuys: p.rebuys,
-        score: seasonScore(Math.max(0, Math.floor(p.chips)), p.rebuys),
+        username: p.username, score: p.best, runs: p.runs,
         hands: p.sHands, wins: p.sWins, bb: Math.round(p.sBb * 10) / 10,
         updatedAt: serverTimestamp(),
       });
+      if (runFinished) {
+        batch.set(doc(db, 'ratings', user.uid), {
+          username: p.username, points: p.points, seasons: p.seasons, high: p.high, updatedAt: serverTimestamp(),
+        });
+      }
     }
     await batch.commit();
   },
