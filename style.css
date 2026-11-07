@@ -305,7 +305,8 @@ select {
   text-transform: uppercase; color: var(--muted); font-weight: 600;
 }
 .panel summary small { text-transform: none; letter-spacing: 0; font-weight: 400; }
-.rankings { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+details.panel[open] > summary { margin-bottom: 12px; }   /* gap between title and content when expanded */
+.rankings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .rankings li {
   display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
   padding: 6px 8px; border-radius: 10px; background: #161c2a; border: 2px solid transparent;
@@ -322,7 +323,6 @@ select {
 .mini.dim { opacity: 0.35; }   /* cards that don't matter for this hand (kickers) */
 .rankings li.current { border-color: var(--gold); background: #2a2410; }
 
-.log-panel { flex: 1; min-height: 160px; }
 .log { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; font-size: 0.8rem; color: #b9c2d3; }
 .log li { padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
 .log li.hand { color: var(--gold); font-weight: 600; }

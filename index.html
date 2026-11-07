@@ -74,8 +74,15 @@
         <p class="hint" id="botDesc"></p>
       </div>
 
-      <div class="panel" id="settingsPanel">
-        <h2>Settings</h2>
+      <!-- <details> gives us a built-in open/close toggle with no JS.
+           Players and Hand Rankings are open; Settings and Log start closed. -->
+      <details class="panel" id="rankingsPanel" open>
+        <summary>Hand Rankings <small>(best to worst)</small></summary>
+        <ol class="rankings" id="rankings"></ol>
+      </details>
+
+      <details class="panel" id="settingsPanel">
+        <summary>Settings</summary>
         <label>Blinds
           <select id="optSb">
             <option value="5">5 / 10</option>
@@ -101,18 +108,12 @@
         </label>
         <label class="check"><input type="checkbox" id="optAuto"> Auto-deal next hand</label>
         <label class="check"><input type="checkbox" id="optRebuy" checked> Bots rebuy when busted</label>
-      </div>
-
-      <!-- <details> gives us a built-in open/close toggle with no JS -->
-      <details class="panel" id="rankingsPanel" open>
-        <summary>Hand Rankings <small>(best to worst)</small></summary>
-        <ol class="rankings" id="rankings"></ol>
       </details>
 
-      <div class="panel log-panel">
-        <h2>Log</h2>
+      <details class="panel" id="logPanel">
+        <summary>Log</summary>
         <ul class="log" id="log"></ul>
-      </div>
+      </details>
     </aside>
   </main>
 
