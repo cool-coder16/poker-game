@@ -34,6 +34,40 @@ h1 span { color: var(--gold); }
 }
 @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
 
+.tut-link {
+  margin-left: auto; padding: 6px 14px; border-radius: 999px;
+  background: #1a2132; border: 1px solid var(--border);
+  color: var(--text); text-decoration: none; font-size: 0.85rem; font-weight: 600;
+}
+.tut-link:hover { border-color: var(--gold); color: var(--gold); }
+
+/* ---------- Tutorial coach ---------- */
+.coach {
+  max-width: 1000px; margin: -30px auto 16px; padding: 14px 18px;
+  border-radius: 16px; background: #1d1a0c; border: 2px solid var(--gold);
+  box-shadow: 0 0 24px rgba(245, 197, 66, 0.25);
+}
+.coach-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.coach-head b { color: var(--gold); font-size: 1.05rem; }
+.coach-head span { color: var(--muted); font-size: 0.78rem; }
+.coach p { margin: 0 0 12px; line-height: 1.5; }
+.coach-btns { display: flex; align-items: center; gap: 16px; }
+.coach-exit { color: var(--muted); font-size: 0.85rem; }
+
+/* Pulsing highlight on whatever the coach is pointing at (set via body[data-tut]) */
+@keyframes tutpulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--gold); }
+  50% { box-shadow: 0 0 0 8px rgba(245, 197, 66, 0.35); }
+}
+body[data-tut="call"] #btnCall,
+body[data-tut="raise"] #raiseBox,
+body[data-tut="rankings"] #rankingsPanel,
+body[data-tut="pot"] #pot { animation: tutpulse 1.3s ease-in-out infinite; }
+body[data-tut="raise"] #raiseBox { border-radius: 12px; }
+
+/* Tutorial table is fixed: no adding bots or changing settings */
+.tutorial .add-bot, .tutorial .hint, .tutorial #settingsPanel, .tutorial .roster .x { display: none; }
+
 /* ---------- Table ---------- */
 .table-wrap {
   position: relative;

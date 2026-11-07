@@ -4,6 +4,8 @@
 // ---------- Settings & state ----------
 const cfg = { startChips: 1000, sb: 10, speed: 1, autoDeal: false, botRebuy: true };
 const MAX_SEATS = 8;
+// Tutorial mode is switched on by opening the page as index.html?tutorial
+const tutorial = new URLSearchParams(location.search).has('tutorial');
 
 let roster = [];       // everyone at the table (including players waiting to join next hand)
 let seated = [];       // the players dealt into the CURRENT hand
@@ -25,6 +27,7 @@ let nextId = 1;
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms * cfg.speed));   // scaled by the speed setting
 const fmt = n => n.toLocaleString();
+const winVerb = p => (p.isHuman ? "win" : "wins");   // "You win" vs "Rex wins"
 const bigBlind = () => cfg.sb * 2;
 const live = () => seated.filter(p => !p.folded);                    // still in the hand
 const canAct = () => seated.filter(p => !p.folded && !p.allIn);      // still able to bet
@@ -323,7 +326,7 @@ async function playHand() {
     status: '', statusClass: '', showCards: false,
   }));
   board = [];
-  deck = shuffle(makeDeck());
+  deck = tutorial ? stackedDeck() : shuffle(makeDeck());   // tutorial uses a fixed, known deal
   dealerIdx = (dealerIdx + 1) % n;
 
   // Heads-up (2 players): the dealer is the small blind. Otherwise blinds are the next two seats.
@@ -336,6 +339,7 @@ async function playHand() {
   buildTable(seated);
   log(`— Hand #${handNo} —`, 'hand');
   setMessage(`Hand #${handNo}`);
+  await tutorialStep('intro');
   currentBet = 0; minRaise = bigBlind();
   postBlind(seated[sbIdx], cfg.sb, 'small blind');
   postBlind(seated[bbIdx], bigBlind(), 'big blind');
@@ -351,6 +355,7 @@ async function playHand() {
     }
   }
   await sleep(300);
+  await tutorialStep('hole');
 
   const stages = ['Pre-flop', 'Flop', 'Turn', 'River'];
   for (let s = 0; s < 4; s++) {
@@ -360,6 +365,7 @@ async function playHand() {
       for (let k = 0; k < count; k++) { board.push(deck.pop()); update(); await sleep(150); }
       setMessage(stages[s]);
       await sleep(250);
+      await tutorialStep(stages[s].toLowerCase());   // 'flop', 'turn' or 'river'
     } else {
       setMessage('Pre-flop');
     }
@@ -547,9 +553,10 @@ async function awardUncontested() {
   winner.status = `Wins ${fmt(amount)}`; winner.statusClass = 's-win';
   winnerIds.add(winner.id);
   seated.forEach(p => { p.totalBet = 0; p.bet = 0; });
-  setMessage(`${winner.name} wins ${fmt(amount)}`);
-  log(`${winner.name} wins ${fmt(amount)} (everyone else folded).`, 'win');
+  setMessage(`${winner.name} ${winVerb(winner)} ${fmt(amount)}`);
+  log(`${winner.name} ${winVerb(winner)} ${fmt(amount)} (everyone else folded).`, 'win');
   update();
+  await tutorialStep('fold');
 }
 
 async function showdown() {
@@ -582,12 +589,13 @@ async function showdown() {
   won.forEach((amt, p) => {
     winnerIds.add(p.id);
     p.status = `Wins ${fmt(amt)}`; p.statusClass = 's-win';
-    summary.push(`${p.name} wins ${fmt(amt)} with ${handName(p.score)}`);
-    log(`${p.name} wins ${fmt(amt)} with ${handName(p.score)}.`, 'win');
+    summary.push(`${p.name} ${winVerb(p)} ${fmt(amt)} with ${handName(p.score)}`);
+    log(`${p.name} ${winVerb(p)} ${fmt(amt)} with ${handName(p.score)}.`, 'win');
   });
   seated.forEach(p => { p.totalBet = 0; p.bet = 0; });
   setMessage(summary.join(' · '));
   update();
+  await tutorialStep('showdown');
 }
 
 async function endHand() {
@@ -605,14 +613,103 @@ async function endHand() {
   btn.textContent = me.chips <= 0 ? 'Rebuy & deal' : 'Deal next hand';
   if (me.chips <= 0) setMessage('You are out of chips! Rebuy to keep playing.');
 
+  if (tutorial) {
+    // After the lesson, the Deal button takes you to a real game instead of another rigged hand
+    btn.textContent = 'Play a real game';
+    btn.onclick = () => { location.href = location.pathname; };
+    await tutorialStep('end');
+    return;
+  }
+
   if (cfg.autoDeal && me.chips > 0) {
     await sleep(3000);
     if (cfg.autoDeal && !handActive) startHand();
   }
 }
 
+// ---------- Tutorial mode ----------
+// A scripted practice hand: fixed cards, and an opponent who only checks/calls so the hand
+// always plays out the same way. tutorialStep(key) shows a coach message at that moment of
+// the hand; if the step has `next: true` the game waits for you to press Next.
+
+// Cards in the order they're dealt: you, Rex, you, Rex, then flop (3), turn, river.
+const TUTORIAL_DEALS = ['Ks', 'Ac', 'Kd', '9c', 'Kh', '7c', '2d', '9s', '4h'];
+
+// Rex never folds or raises. `decide` overrides the normal bot AI (see bots.js).
+const TUTORIAL_BOT = { label: 'Practice opponent', decide: () => ({ type: 'call' }) };
+
+const TUTORIAL_STEPS = {
+  intro: { n: 1, next: true, title: "Welcome to Texas Hold'em 🎓",
+    text: `Every player gets <b>2 private cards</b>, and <b>5 shared cards</b> are dealt face-up in the middle.
+           Your goal is to win chips by making the <b>best 5-card hand</b> from any mix of your 2 cards and the 5 shared ones.
+           This is a practice hand against one opponent, Rex. Nothing here is real.` },
+  hole: { n: 2, highlight: 'call', title: 'Your cards and the blinds',
+    text: `You hold <b>K♠ K♦</b>: a pair of Kings, one of the best starting hands!
+           Before the cards were dealt, two forced bets called <b>blinds</b> went in: you're the small blind (10, marked SB) and Rex is the big blind (20, BB).
+           Now it's your move. <b>Call</b> means match the 20, <b>Raise</b> means bet more, <b>Fold</b> means give up the hand. Try <b>Call</b>!` },
+  flop: { n: 3, highlight: 'rankings', title: 'The flop',
+    text: `The first 3 shared cards are out: <b>K♥ 7♣ 2♦</b>. With your two Kings you now have <b>Three of a Kind</b>!
+           Look at "You have:" above your buttons and the gold row in <b>Hand Rankings</b> on the right.
+           Rex acts first, then it's you. You can <b>Check</b> (pass for free) or <b>Bet</b>.` },
+  turn: { n: 4, highlight: 'raise', title: 'The turn',
+    text: `A 4th shared card, <b>9♠</b>. You still have three Kings, so you're probably ahead. When you think you're ahead, bet to build the pot!
+           Use the quick buttons (<b>½ Pot</b>, <b>Pot</b>) or the slider to pick a bet size, then press the green button.` },
+  river: { n: 5, highlight: 'pot', title: 'The river',
+    text: `The last shared card, <b>4♥</b>. This is the final round of betting. The <b>Pot</b> in the middle is all the chips in play.
+           <b>All-in</b> bets every chip you have. Bet, check, or call, and see who wins!` },
+  showdown: { n: 6, next: true, title: 'Showdown!',
+    text: `When betting ends, everyone still in the hand turns their cards over and the <b>best 5-card hand wins the pot</b>.
+           You had <b>Three of a Kind</b>; Rex had only a pair of 9s. Nice!` },
+  fold: { n: 6, next: true, title: 'The hand ended early',
+    text: `When someone folds, the other player wins the pot without showing cards. That's also how bluffing works.
+           In this practice hand you would have won with Three Kings. Reload the tutorial to try again!` },
+  end: { n: 7, next: true, exit: true, nextLabel: 'Play a real game', title: "You're ready to play!",
+    text: `<b>Fold</b> = quit the hand. <b>Check</b> = pass for free. <b>Call</b> = match the bet. <b>Raise</b> = bet more.
+           In a real game you'll face bots with different styles. You can add or remove them in the Players panel,
+           and Hand Rankings is always on the side if you forget what beats what.` },
+};
+
+// "Ks" -> a card object like the ones makeDeck() builds
+function cardFromCode(code) {
+  const r = code.slice(0, -1);
+  const rank = { J: 11, Q: 12, K: 13, A: 14 }[r] || Number(r);
+  const s = SUIT_LETTERS.indexOf(code.slice(-1));
+  return { r: rank, s, id: s * 13 + (rank - 2) };
+}
+
+// The game deals with deck.pop() (takes from the END), so the scripted cards go last, reversed.
+function stackedDeck() {
+  const rigged = TUTORIAL_DEALS.map(cardFromCode);
+  const used = new Set(rigged.map(c => c.id));
+  const rest = shuffle(makeDeck().filter(c => !used.has(c.id)));
+  return rest.concat(rigged.reverse());
+}
+
+function tutorialStep(key) {
+  const step = TUTORIAL_STEPS[key];
+  if (!tutorial || !step) return Promise.resolve();
+
+  $('coach').classList.remove('hidden');
+  $('coachTitle').textContent = step.title;
+  $('coachText').innerHTML = step.text;     // our own text above, never user input
+  $('coachStep').textContent = `Step ${step.n} of 7`;
+  document.body.dataset.tut = step.highlight || '';
+
+  const nextBtn = $('coachNext');
+  if (!step.next) { nextBtn.classList.add('hidden'); return Promise.resolve(); }   // you act instead
+  nextBtn.classList.remove('hidden');
+  nextBtn.textContent = step.nextLabel || 'Next';
+  return new Promise(resolve => {
+    nextBtn.onclick = () => {
+      if (step.exit) location.href = location.pathname;
+      resolve();
+    };
+  });
+}
+
 // ---------- Sidebar wiring ----------
 $('btnDeal').onclick = startHand;
+$('tutLink').onclick = () => !handActive || confirm('Leave this game and start the tutorial?');
 $('btnAddBot').onclick = () => addBot($('botSelect').value);
 
 Object.entries(BOT_PROFILES).forEach(([key, p]) => {
@@ -640,8 +737,17 @@ for (let i = 0; i < 5; i++) {
   $('board').appendChild(slot);
 }
 roster.push(makePlayer({ name: 'You', avatar: '😎', color: '#2f8f5b', isHuman: true }));
-addBot('shark');
-addBot('fox');
-addBot('station');
 showBotDesc();
-log('Welcome! Press Deal to start. Add or remove bots any time.');
+if (tutorial) {
+  document.body.classList.add('tutorial');
+  const rex = makePlayer({ name: 'Rex', avatar: '🤖', color: '#6b7a90', profile: TUTORIAL_BOT, label: 'Practice opponent' });
+  roster.push(rex);
+  buildTable(roster);
+  $('btnDeal').classList.add('hidden');   // the lesson deals itself
+  startHand();
+} else {
+  addBot('shark');
+  addBot('fox');
+  addBot('station');
+  log('Welcome! Press Deal to start. Add or remove bots any time.');
+}

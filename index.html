@@ -11,6 +11,7 @@
   <header>
     <h1>♠ <span>Poker</span> Night</h1>
     <div class="sub">No-limit Texas Hold'em</div>
+    <a class="tut-link" id="tutLink" href="?tutorial">🎓 Tutorial</a>
   </header>
 
   <main class="layout">
@@ -23,6 +24,16 @@
             <div class="board" id="board"></div>
             <div class="message" id="message">Press “Deal” to start</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Tutorial coach: only shown in tutorial mode (?tutorial) -->
+      <div class="coach hidden" id="coach">
+        <div class="coach-head"><b id="coachTitle"></b><span id="coachStep"></span></div>
+        <p id="coachText"></p>
+        <div class="coach-btns">
+          <button class="btn deal small" id="coachNext">Next</button>
+          <a class="coach-exit" href="./">Exit tutorial</a>
         </div>
       </div>
 
@@ -63,7 +74,7 @@
         <p class="hint" id="botDesc"></p>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="settingsPanel">
         <h2>Settings</h2>
         <label>Blinds
           <select id="optSb">
