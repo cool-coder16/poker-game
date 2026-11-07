@@ -24,15 +24,21 @@
       <button type="button" id="tabUp">Create account</button>
     </div>
     <form id="authForm">
-      <label id="nameRow" class="hidden">Display name
-        <input id="authName" maxlength="20" autocomplete="nickname" placeholder="What others will see">
+      <!-- Sign in shows "Username or email"; Create account shows Username + Email.
+           account.js swaps the rows (and their "required" flags) in setAuthMode. -->
+      <label id="idRow">Username or email
+        <input id="authId" required autocomplete="username" autocapitalize="none" spellcheck="false">
       </label>
-      <label>Email
-        <input id="authEmail" type="email" required autocomplete="email">
+      <label id="nameRow" class="hidden">Username
+        <input id="authName" maxlength="16" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="3-16 letters, numbers or _">
+      </label>
+      <label id="emailRow" class="hidden">Email <small>(only used to reset your password)</small>
+        <input id="authEmail" type="email" autocomplete="email">
       </label>
       <label>Password
         <input id="authPass" type="password" required minlength="6" autocomplete="current-password">
       </label>
+      <label id="ageRow" class="check hidden"><input type="checkbox" id="authAge"> I am 13 or older</label>
       <p class="auth-error" id="authError" role="alert"></p>
       <button class="btn deal" id="authSubmit" type="submit">Sign in</button>
       <button type="button" class="linkbtn" id="authForgot">Forgot password?</button>
@@ -40,6 +46,19 @@
     <div class="auth-or"><span>or</span></div>
     <button type="button" class="btn google" id="authGoogle">Continue with Google</button>
     <p class="hint">Guests can play too. An account just saves your chips and stats.</p>
+  </dialog>
+
+  <!-- Shown to Google users (or old accounts) who haven't picked a username yet -->
+  <dialog id="nameDialog">
+    <form method="dialog" class="auth-close"><button aria-label="Close">✕</button></form>
+    <h2>Pick a username</h2>
+    <form id="nameForm">
+      <label>Username
+        <input id="nameInput" required maxlength="16" autocapitalize="none" spellcheck="false" placeholder="3-16 letters, numbers or _">
+      </label>
+      <p class="auth-error" id="nameError" role="alert"></p>
+      <button class="btn deal" type="submit">Save username</button>
+    </form>
   </dialog>
 
   <main class="layout">

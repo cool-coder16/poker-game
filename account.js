@@ -47,6 +47,7 @@ window.onAuthChanged = (user, prof) => {
   if (!tutorial) syncProfileToGame();   // the tutorial table is separate: leave it alone
   renderAuthBar();
   renderProfilePanel();
+  if (user && !prof.username && !tutorial) openNameDialog();   // Google users pick a username here
 };
 
 // ---------- Header: sign in / account ----------
@@ -94,8 +95,8 @@ function renderProfilePanel() {
   }
   const rate = profile.handsPlayed ? Math.round((profile.handsWon / profile.handsPlayed) * 100) + '%' : '-';
   const rows = [
-    ['Name', profile.displayName],
-    ['Account', currentUser.email || 'Google'],
+    ['Username', profile.username || '(not chosen yet)'],
+    ['Email', currentUser.email || '-'],
     ['Chips', fmt(profile.chips)],
     ['Hands played', fmt(profile.handsPlayed)],
     ['Hands won', `${fmt(profile.handsWon)} (${rate})`],
@@ -111,6 +112,13 @@ function renderProfilePanel() {
     dl.append(dt, dd);
   });
   body.appendChild(dl);
+  if (!profile.username) {
+    const btn = document.createElement('button');
+    btn.className = 'btn small';
+    btn.textContent = 'Choose a username';
+    btn.onclick = openNameDialog;
+    body.appendChild(btn);
+  }
 }
 
 // ---------- Sign-in dialog ----------
@@ -125,8 +133,18 @@ function setAuthMode(mode) {
   authMode = mode;
   $('tabIn').classList.toggle('active', mode === 'in');
   $('tabUp').classList.toggle('active', mode === 'up');
-  $('nameRow').classList.toggle('hidden', mode !== 'up');
-  $('authForgot').classList.toggle('hidden', mode === 'up');
+  // Show the rows for this mode. Hidden inputs must not be "required", or the browser
+  // refuses to submit the form because of a field you can't even see.
+  const up = mode === 'up';
+  $('idRow').classList.toggle('hidden', up);
+  $('nameRow').classList.toggle('hidden', !up);
+  $('emailRow').classList.toggle('hidden', !up);
+  $('ageRow').classList.toggle('hidden', !up);
+  $('authId').required = !up;
+  $('authName').required = up;
+  $('authEmail').required = up;
+  $('authAge').required = up;
+  $('authForgot').classList.toggle('hidden', up);
   $('authSubmit').textContent = mode === 'up' ? 'Create account' : 'Sign in';
   $('authPass').autocomplete = mode === 'up' ? 'new-password' : 'current-password';
   showAuthMessage('');
@@ -143,9 +161,11 @@ function friendlyError(err) {
     'auth/invalid-email': "That email address doesn't look right.",
     'auth/email-already-in-use': 'An account with that email already exists. Try signing in.',
     'auth/weak-password': 'Password must be at least 6 characters.',
-    'auth/invalid-credential': 'Wrong email or password.',
-    'auth/user-not-found': 'Wrong email or password.',
-    'auth/wrong-password': 'Wrong email or password.',
+    'auth/invalid-credential': 'Wrong username or password.',
+    'auth/user-not-found': 'Wrong username or password.',
+    'auth/wrong-password': 'Wrong username or password.',
+    'app/bad-username': 'Usernames are 3-16 characters: letters, numbers and underscore only.',
+    'app/username-taken': 'That username is taken. Try another.',
     'auth/too-many-requests': 'Too many attempts. Wait a bit and try again.',
     'auth/network-request-failed': 'Network problem. Check your connection.',
     'auth/popup-blocked': 'Your browser blocked the sign-in popup. Allow popups and try again.',
@@ -181,26 +201,46 @@ $('authDialog').addEventListener('click', e => { if (e.target === $('authDialog'
 
 $('authForm').onsubmit = e => {
   e.preventDefault();
-  const email = $('authEmail').value.trim();
   const password = $('authPass').value;
   if (authMode === 'up') {
-    const name = $('authName').value.replace(/[<>]/g, '').trim();
-    if (!name) { showAuthMessage('Pick a display name (up to 20 characters).'); return; }
-    runAuth(() => window.pokerAuth.signUp(email, password, name));
+    runAuth(() => window.pokerAuth.signUp($('authName').value, $('authEmail').value.trim(), password));
   } else {
-    runAuth(() => window.pokerAuth.signIn(email, password));
+    runAuth(() => window.pokerAuth.signIn($('authId').value, password));
   }
 };
 
 $('authGoogle').onclick = () => runAuth(() => window.pokerAuth.google());
 
 $('authForgot').onclick = () => {
-  const email = $('authEmail').value.trim();
-  if (!email) { showAuthMessage('Type your email above first, then click "Forgot password?".'); return; }
+  const id = $('authId').value.trim();
+  if (!id) { showAuthMessage('Type your username (or email) above first, then click "Forgot password?".'); return; }
   runAuth(async () => {
-    await window.pokerAuth.resetPassword(email);
-    showAuthMessage('Password reset email sent. Check your inbox (and spam).', true);
+    await window.pokerAuth.resetPassword(id);
+    // Same wording whether or not the account exists, so this can't be used to probe for accounts
+    showAuthMessage('If that account exists, a reset email is on its way. Check your inbox (and spam).', true);
   }, false);
+};
+
+// ---------- "Pick a username" dialog (Google users) ----------
+function openNameDialog() {
+  if (!$('nameDialog').open) $('nameDialog').showModal();
+}
+
+$('nameForm').onsubmit = async e => {
+  e.preventDefault();
+  const err = $('nameError');
+  err.textContent = '';
+  try {
+    const name = await window.pokerAuth.chooseUsername($('nameInput').value, profile);
+    profile.username = name;
+    profile.displayName = name;
+    syncProfileToGame();
+    renderAuthBar();
+    renderProfilePanel();
+    $('nameDialog').close();
+  } catch (ex) {
+    err.textContent = friendlyError(ex);
+  }
 };
 
 // Initial (signed-out) look until Firebase reports otherwise
