@@ -265,6 +265,29 @@ select {
 .panel label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-size: 0.88rem; }
 .panel label.check { justify-content: flex-start; }
 
+/* Hand rankings panel */
+.panel summary {
+  cursor: pointer; font-size: 0.8rem; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted); font-weight: 600;
+}
+.panel summary small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.rankings { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rankings li {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
+  padding: 6px 8px; border-radius: 10px; background: #161c2a; border: 2px solid transparent;
+}
+.rankings .rname { font-size: 0.82rem; font-weight: 600; }
+.rankings .rdesc { grid-column: 1; font-size: 0.7rem; color: var(--muted); }
+.rankings .mini-cards { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 2px; }
+.mini {
+  width: 24px; height: 32px; border-radius: 4px; background: #fff; color: #1b1f2a;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 0.68rem; font-weight: 700; line-height: 1.05;
+}
+.mini.red { color: #d11a2a; }
+.mini.dim { opacity: 0.35; }   /* cards that don't matter for this hand (kickers) */
+.rankings li.current { border-color: var(--gold); background: #2a2410; }
+
 .log-panel { flex: 1; min-height: 160px; }
 .log { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; font-size: 0.8rem; color: #b9c2d3; }
 .log li { padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }

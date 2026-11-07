@@ -195,10 +195,58 @@ function update() {
 function updateMyHand() {
   const me = roster[0];
   let text = '';
+  let score = null;
   if (handActive && me && !me.folded && me.hole.length === 2 && board.length >= 3) {
-    text = 'You have: ' + handName(bestScore(me.hole.concat(board)));
+    score = bestScore(me.hole.concat(board));
+    text = 'You have: ' + handName(score);
   }
   $('myHand').textContent = text;
+  highlightRanking(score);
+}
+
+// ---------- Hand rankings panel ----------
+// Each row: name, short description, and an example hand. In examples a card is 'rank+suit'
+// (suit: s h d c); a trailing '-' marks a kicker that doesn't make the hand (shown dimmed).
+const HAND_RANKINGS = [
+  { cat: 8, royal: true, name: 'Royal Flush', desc: 'A-K-Q-J-10, all the same suit', cards: ['As', 'Ks', 'Qs', 'Js', '10s'] },
+  { cat: 8, name: 'Straight Flush', desc: 'Five in a row, same suit', cards: ['9h', '8h', '7h', '6h', '5h'] },
+  { cat: 7, name: 'Four of a Kind', desc: 'Four cards of the same rank', cards: ['Qs', 'Qh', 'Qd', 'Qc', '3s-'] },
+  { cat: 6, name: 'Full House', desc: 'Three of a kind plus a pair', cards: ['Js', 'Jh', 'Jd', '8c', '8s'] },
+  { cat: 5, name: 'Flush', desc: 'Five cards of the same suit', cards: ['Kd', 'Jd', '8d', '6d', '2d'] },
+  { cat: 4, name: 'Straight', desc: 'Five in a row, any suits', cards: ['10c', '9h', '8s', '7d', '6c'] },
+  { cat: 3, name: 'Three of a Kind', desc: 'Three cards of the same rank', cards: ['7s', '7h', '7d', 'Kc-', '2s-'] },
+  { cat: 2, name: 'Two Pair', desc: 'Two different pairs', cards: ['Ah', 'Ac', '5s', '5d', '9c-'] },
+  { cat: 1, name: 'Pair', desc: 'Two cards of the same rank', cards: ['10h', '10s', 'Ad-', '6c-', '3h-'] },
+  { cat: 0, name: 'High Card', desc: 'None of the above: highest card plays', cards: ['Ac', 'Jd', '8h', '5s', '2c'] },
+];
+
+function renderRankings() {
+  const ol = $('rankings');
+  HAND_RANKINGS.forEach((h, i) => {
+    const li = document.createElement('li');
+    li.dataset.index = i;
+    const cards = h.cards.map(code => {
+      const kicker = code.endsWith('-');
+      const c = kicker ? code.slice(0, -1) : code;
+      const suit = SUIT_LETTERS.indexOf(c.slice(-1));
+      return `<span class="mini ${suit === 1 || suit === 2 ? 'red' : ''} ${kicker ? 'dim' : ''}">` +
+             `<span>${c.slice(0, -1)}</span><span>${SUIT_SYMBOLS[suit]}</span></span>`;
+    }).join('');
+    li.innerHTML = `<span class="rname">${i + 1}. ${h.name}</span><span class="mini-cards">${cards}</span>` +
+                   `<span class="rdesc">${h.desc}</span>`;
+    ol.appendChild(li);
+  });
+}
+
+// Light up the row matching the hand you currently hold (pass null to clear)
+function highlightRanking(score) {
+  let match = -1;
+  if (score !== null) {
+    const cat = Math.floor(score / Math.pow(15, 5));
+    const topRank = Math.floor(score / Math.pow(15, 4)) % 15;
+    match = HAND_RANKINGS.findIndex(h => h.cat === cat && (cat !== 8 || !!h.royal === (topRank === 14)));   // cat 8 has two rows
+  }
+  document.querySelectorAll('#rankings li').forEach((li, i) => li.classList.toggle('current', i === match));
 }
 
 function renderRoster() {
@@ -583,6 +631,8 @@ $('optAuto').onchange = e => { cfg.autoDeal = e.target.checked; };
 $('optRebuy').onchange = e => { cfg.botRebuy = e.target.checked; };
 
 // ---------- Start-up ----------
+const SUIT_LETTERS = ['s', 'h', 'd', 'c'];   // matches the order of SUIT_SYMBOLS in poker.js
+renderRankings();
 // Five empty slots for the community cards
 for (let i = 0; i < 5; i++) {
   const slot = document.createElement('div');

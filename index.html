@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Poker Night</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -90,6 +91,12 @@
         <label class="check"><input type="checkbox" id="optAuto"> Auto-deal next hand</label>
         <label class="check"><input type="checkbox" id="optRebuy" checked> Bots rebuy when busted</label>
       </div>
+
+      <!-- <details> gives us a built-in open/close toggle with no JS -->
+      <details class="panel" id="rankingsPanel" open>
+        <summary>Hand Rankings <small>(best to worst)</small></summary>
+        <ol class="rankings" id="rankings"></ol>
+      </details>
 
       <div class="panel log-panel">
         <h2>Log</h2>
