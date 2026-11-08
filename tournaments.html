@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tournaments · Poker Night</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1><a href="index.html">♠ <span>Poker</span> Night</a></h1>
+    <div class="sub">Tournaments</div>
+    <nav class="topnav"><a class="tut-link" href="rooms.html">← Multiplayer</a></nav>
+    <div class="auth-bar" id="authBar"></div>
+  </header>
+
+  <main class="page narrow">
+    <div class="hero">
+      <h2>🏅 Tournaments</h2>
+      <p class="season-line">Freezeouts: one table, no rebuys, rising blinds. The last player with chips wins.</p>
+    </div>
+
+    <section class="panel acct-signedout hidden" id="needSignIn">
+      <h2>Sign in to play tournaments</h2>
+      <p>You need a free account so your results have a name on them.</p>
+      <button class="btn deal" id="btnSignIn" type="button">Sign in / Create account</button>
+    </section>
+
+    <section class="panel acct-signedout hidden" id="notReady">
+      <h2>Online play is not switched on yet</h2>
+      <p>The site owner still needs to turn on the Realtime Database for this site.</p>
+    </section>
+
+    <div id="tourneyView" class="hidden">
+      <section class="panel acct-section">
+        <h2>Scheduled tournaments <span class="hint">every 2 hours · even hours, UTC</span></h2>
+        <ul class="slot-list" id="slotList"></ul>
+        <p class="hint">Register in the hour before the start. It runs at the start time if at least 3 people are there, otherwise it's cancelled.</p>
+      </section>
+
+      <section class="panel acct-section">
+        <h2>Sit &amp; Go <span class="hint">starts as soon as the table is full</span></h2>
+        <div class="room-actions center-row">
+          <button class="btn deal" id="btnQuick" type="button">Play now</button>
+        </div>
+        <p class="hint centered">"Play now" joins the fullest Sit &amp; Go with a free seat, or starts a new 4-player one.</p>
+        <ul class="slot-list" id="sngList"></ul>
+        <p class="board-msg" id="sngEmpty"></p>
+        <div class="form-row">
+          <b>Start your own:</b>
+          <select id="sngSize" aria-label="Players">
+            <option value="3">3 players</option><option value="4" selected>4 players</option>
+            <option value="5">5 players</option><option value="6">6 players</option>
+          </select>
+          <label class="check"><input type="checkbox" id="sngBots"> I'll add bots to fill seats</label>
+          <button class="btn small" id="btnCreate" type="button">Create Sit &amp; Go</button>
+        </div>
+      </section>
+    </div>
+
+    <p class="error-line" id="tourneyError" role="alert"></p>
+
+    <details class="panel how" open>
+      <summary>How tournaments work</summary>
+      <ul>
+        <li><b>Freezeout.</b> Everyone starts with 1,000 chips. Blinds start at 10/20 and rise every 5 hands. There are no rebuys: when you run out of chips you're out, and the last player standing wins.</li>
+        <li><b>Rating points.</b> Finishing 1st / 2nd / 3rd earns <b>5 / 3 / 1</b> rating points (a 3-player tournament pays 3 / 1 / 0). At least 3 human players must have started, and bots never earn points. Your points are added the next time you open the site after it finishes.</li>
+        <li><b>One table.</b> These are single-table tournaments of up to 8 players. Real multi-table tournaments need a server to move players between tables, which is a later step.</li>
+        <li><b>The dealer.</b> One player's browser deals for the table. If they leave or disconnect, another player takes over. The results run on the honor system for now.</li>
+      </ul>
+    </details>
+  </main>
+
+  <script src="common.js"></script>
+  <script src="season.js"></script>
+  <script src="account.js"></script>
+  <script src="arena.js"></script>
+  <script src="tournament.js"></script>
+  <script src="room-net.js"></script>
+  <script src="arena-rating.js"></script>
+  <script src="tourney-rating.js"></script>
+  <script src="tournaments.js"></script>
+  <script src="firebase-config.js"></script>
+  <script type="module" src="auth.js"></script>
+  <script type="module" src="store-firebase.js"></script>
+</body>
+</html>

@@ -26,6 +26,8 @@ test('labels and countdown text', () => {
   assert.strictEqual(countdownText(12 * 60000 + 30000), '12m 30s');
   assert.strictEqual(countdownText(45000), '45s');
   assert.strictEqual(countdownText(-5), '0s');
+  assert.strictEqual(countdownText((2 * 60 + 57) * 60000 + 4000), '2h 57m');
+  assert.strictEqual(countdownText(60 * 60000), '1h 00m');
 });
 
 test('points: two per player beaten, plus a winner bonus', () => {

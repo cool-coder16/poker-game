@@ -29,12 +29,14 @@ let signingUp = false;   // true while signUp() runs, so onAuthStateChanged does
 // Rating: points (everything added together), seasons (played), bestRank, history (last 12 season results).
 // Arena: arenaPoints (the part of `points` that came from Arenas), arenas (counted), arenaBest (best place),
 // arenaDone (the newest Arena already totalled up), arenaLog (last 8 results).
+// Tournaments: the same idea (tourneyPoints, tourneys, tourneyBest, tourneyDone = codes already counted, tourneyLog).
 function zeroStats(season) {
   return {
     handsPlayed: 0, handsWon: 0, biggestPot: 0, high: 0,
     season, sHands: 0, sWins: 0, sBb: 0, runs: 0, best: 0,
     points: 0, seasons: 0, bestRank: 0, history: [],
     arenaPoints: 0, arenas: 0, arenaBest: 0, arenaDone: '', arenaLog: [],
+    tourneyPoints: 0, tourneys: 0, tourneyBest: 0, tourneyDone: [], tourneyLog: [],
   };
 }
 

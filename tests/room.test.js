@@ -3,7 +3,7 @@
 const assert = require('assert');
 const { load, seeded } = require('./helpers');
 if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
-load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js', 'arena.js', 'arena-rating.js');
+load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js', 'arena.js', 'arena-rating.js', 'tournament.js', 'tourney-rating.js');
 
 let passed = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -37,6 +37,7 @@ async function startHost(room, resume = null) {
   await room.hostNet.updateMeta(room.code, { status: 'playing' });
   const host = createRoomHost({ net: room.hostNet, code: room.code, meta: r.meta, seats: r.seats, bots: r.bots, resume, timing: room.timing });
   host.promise = host.run();
+  host.promise.catch(e => console.error('DEALER CRASHED:', e.stack));   // a crash must never pass quietly
   return host;
 }
 
@@ -189,7 +190,8 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
   });
 
   await test('the host can refresh and resume the same game', async () => {
-    const room = await setupRoom({ humans: ['ann', 'ben', 'cat'], bots: ['rock'] });
+    // Big stacks: with tiny ones the whole game can end on hand 1 (a few all-ins), and there would be nothing to resume
+    const room = await setupRoom({ humans: ['ann', 'ben', 'cat'], bots: ['rock'], meta: { startChips: 2000 } });
     ['ann', 'ben', 'cat'].forEach((u, i) => simPlayer(room, u, { seed: 20 + i }));
     const host = await startHost(room);
     await until(() => (room.hub.peek(`rooms/${room.code}/state`) || {}).view?.handNo >= 2, 10000, 'two hands');
@@ -204,7 +206,7 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
     await host2.promise;
     const st = room.hub.peek(`rooms/${room.code}/state`);
     assert(st.view.handNo >= beforeHand, 'game continued from where it was');
-    assert.strictEqual(chipsOf(room), 4 * 150, 'chips changed across the resume');
+    assert.strictEqual(chipsOf(room), 4 * 2000, 'chips changed across the resume');
   });
 
   await test('a player who leaves is folded and sits out; the rest play on', async () => {
@@ -366,6 +368,18 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
     host2.stop();
   });
 
+  await test('every move carries a unique tag, even many in the same millisecond (a repeated tag would drop a move)', async () => {
+    const hub = createMemoryHub();
+    const net = createRoomNet(hub.store('ann'));
+    const seen = new Set();
+    for (let i = 0; i < 5000; i++) {
+      await net.sendAction('ABCDE', { seq: i, type: 'call' });
+      const n = hub.peek('roomActions/ABCDE/ann').n;
+      assert(typeof n === 'string' && !seen.has(n), 'tag reused at move ' + i);
+      seen.add(n);
+    }
+  });
+
   await test('the public list hides stale tables, and quickJoin picks the fullest table with room (or makes one)', async () => {
     const hub = createMemoryHub();
     const net = createRoomNet(hub.store('zed'));
@@ -387,6 +401,82 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
     assert.strictEqual(a.meta.mode, 'arena');
     assert.strictEqual(a.meta.arena, arenaWindow().id);
     assert(a.meta.arenaEnd > Date.now());
+  });
+
+
+  // ---------------------------------------------------------------- tournaments
+  await test('a freezeout publishes final places; a tournament also publishes results for the rating', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben', 'cat'], bots: ['rock'], meta: { kind: 'sng', size: 4, startChips: 150 } });
+    ['ann', 'ben', 'cat'].forEach((u, i) => simPlayer(room, u, { seed: 120 + i }));
+    const host = await startHost(room);
+    await finished(room);
+    await host.promise;
+    const st = stateOf(room);
+    assert(st.places && st.places.length === 4, 'places for all four players');
+    assert.deepStrictEqual(st.places.map(p => p.place), [1, 2, 3, 4]);
+    assert.strictEqual(new Set(st.places.map(p => p.id)).size, 4, 'everyone exactly once');
+    assert.strictEqual(st.places[0].id, st.winner === null ? st.places[0].id : st.winner, 'the winner is first');
+    const results = room.hub.peek(`tourneys/${room.code}/results`);
+    assert.strictEqual(results.kind, 'sng');
+    assert.strictEqual(results.n, 3, 'only the 3 humans count (the bot does not)');
+    assert.deepStrictEqual(Object.values(results.places).map(p => p.place).sort(), [1, 2, 3], 'human places are 1..3');
+    assert(!results.places['bot-b0'], 'the bot is not in the results');
+  });
+
+  await test('a private room (no tournament) publishes places but no tournament results', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben'], meta: { startChips: 150 } });
+    ['ann', 'ben'].forEach((u, i) => simPlayer(room, u, { seed: 130 + i }));
+    await startHost(room);
+    await finished(room);
+    assert.strictEqual(stateOf(room).places.length, 2);
+    assert.strictEqual(room.hub.peek(`tourneys/${room.code}/results`), null);
+  });
+
+  await test('tournament ratings: results are counted once, small fields earn nothing, and unfinished ones are given up on', async () => {
+    const hub = createMemoryHub();
+    const me = createRoomNet(hub.store('me'));
+    const host = createRoomNet(hub.store('h'));
+    const res = (kind, n, myPlace) => ({ code: 'x', kind, finished: 1, n, places: myPlace ? { me: { name: 'me', place: myPlace } } : {} });
+    await host.publishTourneyResults('WIN01', res('sng', 5, 1));         // 1st of 5: 5 points
+    await host.publishTourneyResults('THREE', res('scheduled', 3, 2));   // 2nd of 3: 1 point
+    await host.publishTourneyResults('TINY1', res('sng', 2, 1));         // only 2 humans: nothing
+    await host.publishTourneyResults('NOTME', res('sng', 5, 0));         // I left before the end and have no place
+    const t0 = 1000000;
+    for (const [code, t] of [['WIN01', t0], ['THREE', t0 + 1], ['TINY1', t0 + 2], ['NOTME', t0 + 3], ['LIVE1', t0 + 4], ['OLD01', t0]]) await hub.store('me').set(`tourneyPlayed/me/${code}`, t);
+    const profile = { points: 10, tourneyPoints: 0, tourneys: 0, tourneyBest: 0, tourneyDone: [], tourneyLog: [] };
+    const now = t0 + 60000;                       // a minute later: LIVE1 / OLD01 have no results yet
+    assert.strictEqual(await settleTourneyRatings(me, 'me', profile, now), true);
+    assert.deepStrictEqual({ pts: profile.tourneyPoints, total: profile.points, n: profile.tourneys, best: profile.tourneyBest },
+      { pts: 6, total: 16, n: 2, best: 1 });
+    assert.deepStrictEqual(profile.tourneyLog.map(l => [l.code, l.place, l.of, l.points]), [['THREE', 2, 3, 1], ['WIN01', 1, 5, 5]]);
+    assert(profile.tourneyDone.includes('TINY1') && profile.tourneyDone.includes('NOTME'), 'looked at, nothing to add');
+    assert(!profile.tourneyDone.includes('LIVE1'), 'still running: keep waiting');
+    assert.strictEqual(await settleTourneyRatings(me, 'me', profile, now), false, 'nothing new the second time');
+    // much later, results that never appeared are given up on
+    assert.strictEqual(await settleTourneyRatings(me, 'me', profile, t0 + TOURNEY_SETTLE_WAIT_MS + 10), true);
+    assert(profile.tourneyDone.includes('LIVE1') && profile.tourneyDone.includes('OLD01'));
+    assert.strictEqual(profile.points, 16, 'giving up adds no points');
+  });
+
+  // ---------------------------------------------------------------- arena bots
+  await test('arena: bots keep a lone player company, never score, and step aside as humans arrive', async () => {
+    const room = await setupRoom({ humans: ['ann'], meta: { mode: 'arena', status: 'playing', arena: 'T-9', roundHands: 3, startChips: 1000, maxSeats: 6, fillBots: true, arenaEnd: Date.now() + 60000 }, timing: { roundPauseMs: 0 } });
+    let roundsSeen = 0, botsAtStart = null;
+    simPlayer(room, 'ann', { seed: 140, passive: true, onState: st => {   // every published state, not a sample
+      if (st.round && botsAtStart === null) botsAtStart = st.view.seats.filter(x => x.isBot).length;
+      if (st.roundResult) roundsSeen = Math.max(roundsSeen, st.roundResult.n);
+    } });
+    const host = await startHost(room);
+    await until(() => botsAtStart !== null, 5000, 'a round with bots to start');
+    assert.strictEqual(botsAtStart, 2, 'two bots fill the table to three players');
+    await until(() => roundsSeen >= 1, 20000, 'round 1 to finish');
+    const scores = room.hub.peek(`arenas/T-9/tables/${room.code}`).scores;
+    assert.deepStrictEqual(Object.keys(scores), ['ann'], 'only the human is in the standings');
+    // two more humans arrive: at the next round the bots leave
+    await addPlayer(room, 'ben', { seed: 141, passive: true });
+    await addPlayer(room, 'cat', { seed: 142, passive: true });
+    await until(() => { const v = stateOf(room).view; return stateOf(room).round && v.seats.length === 3 && v.seats.every(s => !s.isBot) && stateOf(room).round.n >= 2; }, 25000, 'the bots to step aside');
+    host.stop();
   });
 
   // ---------------------------------------------------------------- arena
@@ -450,11 +540,13 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
     ['ann', 'ben'].forEach((u, i) => simPlayer(room, u, { seed: 95 + i, passive: true }));
     const host = await startHost(room);
     await until(() => (stateOf(room) || {}).round, 3000, 'round 1');
+    const roundAtJoin = stateOf(room).round.n;
     await addPlayer(room, 'cat', { seed: 97, passive: true });
     await until(() => seatIds(room).includes('cat'), 4000, 'cat to appear');
-    // cat appears in the middle of round 1, so is waiting (no chips in this round)
-    const waitingSeen = stateOf(room).view.seats.find(x => x.id === 'cat');
-    assert.strictEqual(waitingSeen.waiting, true, 'cat waits for the next round');
+    // cat appears in the middle of a round, so waits (no chips this round). The one exception: if cat happens to sit
+    // down exactly as a new round begins, cat is correctly dealt straight in.
+    const seenCat = stateOf(room).view.seats.find(x => x.id === 'cat');
+    assert(seenCat.waiting === true || stateOf(room).round.n > roundAtJoin, 'cat waits for the next round (or a new round just began)');
     await until(() => { const rr = stateOf(room).roundResult; return rr && rr.rows.some(row => row.id === 'cat'); }, 15000, 'cat to be scored in a later round');
     host.stop();
   });

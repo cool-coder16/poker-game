@@ -92,7 +92,7 @@ function startHand(t, opts = {}) {
 
   t.seats.forEach(s => Object.assign(s, {
     hole: [], bet: 0, totalBet: 0, folded: false, allIn: false, acted: false,
-    inHand: s.chips > 0, status: '', statusClass: '', showCards: false, score: 0,
+    inHand: s.chips > 0, handStartChips: s.chips, status: '', statusClass: '', showCards: false, score: 0,
   }));
   t.handNo++;
   t.board = [];

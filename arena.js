@@ -9,6 +9,7 @@
 const ARENA_MINUTES = 30;
 const ARENA_ROUND_HANDS = 10;      // hands per round
 const ARENA_HANDS_PER_LEVEL = 3;   // the blinds step up every 3 hands inside a round
+const ARENA_MIN_TABLE = 3;         // bots fill an arena table up to this many players (they never score or earn rating)
 
 // Rating points: the top 3 of a finished Arena earn 3 / 2 / 1. To count you must have played at least 2 rounds,
 // and the Arena needs at least 3 such players (so nobody can farm points alone). They are small on purpose:
@@ -35,10 +36,11 @@ function arenaLabel(id) {
   return `${time.slice(0, 2)}:${time.slice(2)} UTC`;
 }
 
-// "12m 30s" until `ms`
+// "2h 57m" / "12m 30s" / "45s" until `ms`
 function countdownText(ms) {
   const s = Math.max(0, Math.ceil(ms / 1000));
   const m = Math.floor(s / 60);
+  if (m >= 60) return `${Math.floor(m / 60)}h ${pad2(m % 60)}m`;
   return m > 0 ? `${m}m ${pad2(s % 60)}s` : `${s}s`;
 }
 

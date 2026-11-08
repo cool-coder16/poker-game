@@ -7,7 +7,8 @@ Firebase's Realtime Database on the free plan, and **one player's browser acts a
 |---|---|---|
 | **Private room** (`rooms.html`) | Make a room, share a 5-letter code. A lobby, then a freezeout: no rebuys, last player with chips wins. | The host can add them |
 | **Open table** (`tables.html`) | A public table anyone can join. Sit down or leave any time, rebuy if you bust, plays on while 2+ people are there. | No |
-| **Arena** (`arena.html`) | A 30-minute window every :00 and :30 UTC. Tables play 10-hand rounds with equal stacks; your place in each round earns points; standings add up across all tables. | No |
+| **Arena** (`arena.html`) | A 30-minute window every :00 and :30 UTC. Tables play 10-hand rounds with equal stacks; your place in each round earns points; standings add up across all tables. | Fill empty seats up to 3 players; never score |
+| **Tournaments** (`tournaments.html`) | **Sit & Go**: starts when the table is full. **Scheduled**: one every 2 hours (even UTC hours), register in the hour before; runs if 3+ people are there. Single-table freezeouts with rising blinds. | Optional for Sit & Go; never earn points |
 
 ## The layers
 
@@ -15,13 +16,14 @@ Firebase's Realtime Database on the free plan, and **one player's browser acts a
 rooms.html, tables.html,        the pages
   arena.html, room.html
   room-client.js, rooms.js,     what you see and click
-  tables.js, arena-page.js
+  tables.js, arena-page.js, tournaments.js
   room-view.js                  turns the published table into what table-ui.js draws (pure, tested)
   table-ui.js                   draws the table (shared with the single-player game)
 
 room-host.js                    the DEALER: runs a table, waits for moves, publishes the state
   engine.js                     the poker rules as a pure state machine (no screen, no network, tested)
   arena.js                      the Arena rules: windows, points, standings (pure, tested)
+  tournament.js                 tournament rules: schedule, points, places, when to start (pure, tested)
   bots.js                       bot decisions
 
 room-net.js                     every room operation (create, join, publish, public list, arena scores...)
@@ -38,7 +40,8 @@ The dealer saves its whole table to `roomHost/<code>` after every move (readable
 So when the dealer leaves, or disappears, another player can carry on from that saved table:
 - **Leaving politely:** the dealer hands the job to a connected player (`setHost`).
 - **Vanishing:** after about 12 seconds a seated player claims the job. The database rules only allow that
-  when the dealer's presence is really gone (`meta/host` rule in `database.rules.json`).
+  when the dealer's presence is really gone (`meta/host` rule in `database.rules.json`). This works in a lobby
+  (private rooms and tournaments) as well as in a running game.
 - A refreshed dealer simply resumes. If a dealer who lost the job is still running, it stops itself.
 
 ## Public list and Arena scores
@@ -58,6 +61,28 @@ So when the dealer leaves, or disappears, another player can carry on from that 
 - Top 3 earn 3 / 2 / 1 rating points, but only if you played at least 2 rounds and at least 3 players did.
 - Like the weekly season, this is worked out in your own browser: honor system until a server does it.
 
+## Tournaments
+
+- **Sit & Go** (`kind: 'sng'`): a freezeout room that is also listed publicly while it gathers players. The dealer's
+  page starts it the moment the table is full (`tourneyAction` in `tournament.js`).
+- **Scheduled** (`kind: 'scheduled'`): the room code is the same for everyone (`tourneyCode`, like `TN2026110714`),
+  so "Register" just creates that room if nobody has yet, and sits you down in it. At the start time the dealer
+  removes people who registered and left, then starts if at least 3 are there, or cancels.
+- Both use rising blinds (every 5 hands). The dealer records the order players are knocked out
+  (`finalPlaces`, `knockoutOrder`) and, for a tournament, publishes `tourneys/<code>/results`.
+- **Rating:** sitting down marks the tournament (`tourneyPlayed/<uid>/<code>`); the next time you open the site
+  `tourney-rating.js` reads the results and adds 5 / 3 / 1 points for 1st / 2nd / 3rd (3 / 1 / 0 if exactly 3
+  humans played; nothing under 3 humans; bots never earn points). Each tournament counts once.
+- **Single table only** (up to 8). Multi-table tournaments need something to move players between tables,
+  which means a server.
+
+## Arena bots
+
+An arena table created from the Arena page has `fillBots`: when fewer than 3 humans are at the table, the dealer
+adds bots to make 3 (so a lone player can still play a round). They play, but never appear in the standings, and
+because rating needs 3 *human* qualifiers, a bot-filled Arena earns no rating points. They step aside at the next
+round when humans arrive.
+
 ## Changing the backend later
 
 - **Different database, same idea:** write a new store file with the small interface in `store-memory.js`
@@ -74,7 +99,9 @@ So when the dealer leaves, or disappears, another player can carry on from that 
   read them (`roomPrivate/`). Arena standings run on the honor system until a server deals.
 - If the dealer vanishes and nobody else is at the table, the table is gone.
 - The free database allows about 100 players connected at once. Plenty for friends.
-- Not built yet: spectators, chat, bots at open/arena tables.
+- Not built yet: spectators, chat, multi-table tournaments, bots at open tables (by design).
+- A scheduled tournament's room can be created by anyone who knows its code before the real first registrant, so
+  on the honor system the creator becomes its dealer.
 
 ## Security rules
 
@@ -89,10 +116,11 @@ the code; a seated player may take over a dealer who is truly disconnected.
 ```
 node tests/engine.test.js     the poker rules (13 tests, including 3,000 random hands)
 node tests/arena.test.js      the Arena rules (windows, points, ties, standings, rating points)
-node tests/room.test.js       whole tables on the in-memory store (19 tests: privacy, timeouts, disconnects,
-                              dealer handoff, open tables, rebuys, arena rounds, arena ratings, the public list)
+node tests/tournament.test.js the tournament rules (schedule, points, places, start/cancel)
+node tests/room.test.js       whole tables on the in-memory store (24 tests: privacy, timeouts, disconnects,
+                              dealer handoff, open tables, rebuys, arena rounds/ratings/bots, tournament places and ratings, the public list)
 ```
 
 Try the table UI with no network or friends:
 `room.html?local` (private room), `room.html?local=open` (open table), `room.html?local=arena&rounds=3` (Arena,
-with 3-hand rounds so you see scoring quickly). Each has two bots for company.
+with 3-hand rounds so you see scoring quickly), `room.html?local=sng` (a 3-player Sit & Go). Each has two bots for company.

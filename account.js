@@ -20,10 +20,12 @@ window.onAuthChanged = async (user, prof) => {
   renderAuthBar();
   authListeners.forEach(fn => fn(user, prof));
   // Count any Arenas that finished since your last visit (arena-rating.js; only the pages that load it do this)
+  const redraw = changed => { if (changed) authListeners.forEach(fn => fn(currentUser, profile)); };   // show the new rating
   if (user && prof && typeof settleArenas === 'function') {
-    settleArenas()
-      .then(changed => { if (changed) authListeners.forEach(fn => fn(currentUser, profile)); })   // redraw with the new rating
-      .catch(err => console.error('Could not count Arena results', err));
+    settleArenas().then(redraw).catch(err => console.error('Could not count Arena results', err));
+  }
+  if (user && prof && typeof settleTourneys === 'function') {   // same for finished tournaments (tourney-rating.js)
+    settleTourneys().then(redraw).catch(err => console.error('Could not count tournament results', err));
   }
   // Google users pick a username (but don't interrupt the tutorial; `tutorial` only exists on play.html)
   const inTutorial = typeof tutorial !== 'undefined' && tutorial;

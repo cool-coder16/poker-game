@@ -30,7 +30,19 @@
             ".validate": "newData.isNumber() && newData.val() >= 3 && newData.val() <= 30"
           },
           "host": {
-            ".write": "auth != null && root.child('rooms/' + $code + '/seats/' + auth.uid).exists() && root.child('rooms/' + $code + '/meta/status').val() === 'playing' && !root.child('rooms/' + $code + '/presence/' + data.val()).exists() && newData.val() === auth.uid"
+            ".write": "auth != null && root.child('rooms/' + $code + '/seats/' + auth.uid).exists() && root.child('rooms/' + $code + '/meta/status').val() !== 'finished' && !root.child('rooms/' + $code + '/presence/' + data.val()).exists() && newData.val() === auth.uid"
+          },
+          "kind": {
+            ".validate": "newData.isString() && (newData.val() === 'sng' || newData.val() === 'scheduled')"
+          },
+          "size": {
+            ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 8"
+          },
+          "minPlayers": {
+            ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 8"
+          },
+          "startAt": {
+            ".validate": "newData.isNumber()"
           }
         },
         "seats": {
@@ -99,6 +111,24 @@
         ".write": "auth != null && auth.uid === $uid",
         "$id": {
           ".validate": "$id.matches(/^[0-9]{8}-[0-9]{4}$/) && newData.val() === true"
+        }
+      }
+    },
+    "tourneys": {
+      "$code": {
+        ".read": "auth != null",
+        "results": {
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid",
+          ".validate": "newData.hasChildren(['kind', 'finished', 'n', 'places'])"
+        }
+      }
+    },
+    "tourneyPlayed": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$code": {
+          ".validate": "$code.matches(/^[A-Z0-9]{4,16}$/) && newData.isNumber()"
         }
       }
     }

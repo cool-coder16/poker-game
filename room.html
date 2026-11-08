@@ -40,6 +40,12 @@
       <p class="hint">Friends join by typing this code on the Rooms page, or by opening the invite link. Everyone needs a free account.</p>
     </section>
 
+    <section class="panel hidden" id="tourneyBox">
+      <h2 id="tourneyTitle">Tournament</h2>
+      <p class="tourney-info" id="tourneyInfo"></p>
+      <p class="hint" id="tourneyRules"></p>
+    </section>
+
     <div class="lobby-grid">
       <section class="panel">
         <h2>Players <span id="seatCount"></span></h2>
@@ -51,7 +57,7 @@
         <p class="hint" id="botHint"></p>
       </section>
 
-      <section class="panel settings-form">
+      <section class="panel settings-form" id="optionsPanel">
         <h2>Game options <span id="optsLock" class="hint"></span></h2>
         <label>Starting chips
           <select id="optChips">
@@ -144,6 +150,7 @@
   <dialog id="roomOver">
     <h2>Game over</h2>
     <p class="run-reason" id="overText"></p>
+    <ol class="places" id="overPlaces"></ol>
     <div class="run-actions">
       <button class="btn deal hidden" id="btnAgain" type="button">Play again (new lobby)</button>
       <a class="btn small" id="overLink" href="rooms.html">Back to rooms</a>
@@ -161,6 +168,7 @@
   <script src="store-memory.js"></script>
   <script src="room-net.js"></script>
   <script src="arena.js"></script>
+  <script src="tournament.js"></script>
   <script src="room-host.js"></script>
   <script src="table-ui.js"></script>
   <script src="room-client.js"></script>

@@ -491,3 +491,17 @@ table.lb tr.waiting td { opacity: 0.5; }
 .btn.disabled { opacity: 0.35; pointer-events: none; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 table.lb.players th:nth-child(2) { text-align: left; }
+
+/* Tournaments */
+.tourney-info { margin: 0 0 6px; color: var(--gold); font-weight: 700; }
+ol.places { text-align: left; margin: 10px auto 14px; padding-left: 26px; max-width: 260px; display: grid; gap: 4px; }
+ol.places li.me { color: var(--gold); font-weight: 700; }
+ol.places b { color: var(--gold); font-weight: 700; font-size: 0.85em; }
+.slot-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.slot-list li { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: #0e131e; border: 1px solid var(--border); }
+.slot-list .grow { flex: 1; min-width: 0; }
+.slot-list b { display: block; }
+.slot-list small { color: var(--muted); font-size: 0.8rem; }
+.form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.form-row select { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: #0e131e; color: var(--text); font: inherit; }
+.form-row label.check { display: flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--muted); }

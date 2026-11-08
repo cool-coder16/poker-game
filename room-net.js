@@ -12,6 +12,8 @@
 //   roomHost/<code>          the host's saved table, so a refreshed host can carry on (host only)
 //   lobby/<code>             the public list of open and arena tables (the host refreshes it every ~20s)
 //   arenas/<id>/tables/<code>  one arena table's running scores (the host writes them)
+//   tourneys/<code>/results  a finished tournament's final places (the host writes them)
+//   tourneyPlayed/<uid>/<code>  tournaments this player sat down in (only they can read or write it)
 //   arenaPlayed/<uid>/<id>   Arenas this player sat down in (only they can read or write it): so the site knows which to total up
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I: easy to read out loud
@@ -44,9 +46,34 @@ function tableMeta(kind, hostName, extra = {}) {
   const base = { hostName, status: 'playing', startChips: 1000, sb: 10, turnSeconds: 30, maxSeats: 6, allowBots: false, rising: false, handsPerLevel: 10 };
   if (kind === 'arena') {
     const w = arenaWindow();
-    return { ...base, mode: 'arena', arena: w.id, arenaEnd: w.end, roundHands: ARENA_ROUND_HANDS, ...extra };
+    return { ...base, mode: 'arena', arena: w.id, arenaEnd: w.end, roundHands: ARENA_ROUND_HANDS, fillBots: true, ...extra };   // bots keep a lone player company
   }
   return { ...base, mode: 'open', ...extra };
+}
+
+// The options for a tournament (needs tournament.js). kind is 'sng' (starts when full) or 'scheduled' (starts at `startAt`).
+function tournamentMeta(kind, hostName, extra = {}) {
+  const base = {
+    hostName, status: 'lobby', mode: 'freezeout', kind, startChips: TOURNEY_START_CHIPS, sb: TOURNEY_SB, turnSeconds: 30,
+    rising: true, handsPerLevel: TOURNEY_HANDS_PER_LEVEL, allowBots: false,
+  };
+  if (kind === 'scheduled') return { ...base, size: TOURNEY_MAX_PLAYERS, maxSeats: TOURNEY_MAX_PLAYERS, minPlayers: TOURNEY_MIN_PLAYERS, ...extra };
+  const size = extra.size || 4;
+  return { ...base, size, maxSeats: size, ...extra };
+}
+
+// "Register" for the scheduled tournament starting at startMs: make its room if nobody has yet. Returns the room code.
+async function registerScheduled(net, startMs, hostName) {
+  const code = tourneyCode(startMs);
+  await net.createRoomWithCode(code, tournamentMeta('scheduled', hostName, { startAt: startMs }));   // false if it already exists: fine
+  return code;
+}
+
+// "Play now" for Sit & Go: join the fullest one that has room, or start a new one
+async function quickSitAndGo(net, hostName) {
+  const open = liveTables(await net.getLobby())
+    .filter(e => e.kind === 'sng' && e.status === 'lobby' && (e.seats || 0) < (e.max || 4));
+  return open.length ? open[0].code : net.createRoom(tournamentMeta('sng', hostName));
 }
 
 // "Play now": join the fullest table that has a free seat, or start a new one (you become its dealer). Returns the room code.
@@ -57,11 +84,30 @@ async function quickJoin(net, kind, hostName) {
   return open.length ? open[0].code : net.createRoom(tableMeta(kind, hostName));
 }
 
+// The line in the public list for a table or tournament. `humans`/`bots` are counts; `max` is the table size.
+function makeListing({ code, meta, hostName, humans, bots = 0, sb, max, status }) {
+  const kind = meta.kind || null;
+  return {
+    code, mode: meta.mode || 'freezeout', kind, status: status || meta.status || 'playing',
+    host: meta.host, hostName: hostName || meta.hostName, name: meta.name || '',
+    sb, startChips: meta.startChips, seats: humans + (kind ? bots : 0), bots, max,
+    arena: meta.arena || null, arenaEnd: meta.arenaEnd || null, startAt: meta.startAt || null,
+    beat: Date.now(),
+  };
+}
+
 function createRoomNet(store) {
   const room = code => `rooms/${code}`;
+  let actionCounter = 0;
 
   return {
     uid: store.uid,
+
+    // Make a room with a code everyone already knows (scheduled tournaments). Returns true if we created it,
+    // false if someone else already had.
+    async createRoomWithCode(code, meta) {
+      return store.create(`${room(code)}/meta`, { status: 'lobby', ...meta, host: store.uid, createdAt: Date.now() });
+    },
 
     // Make a new room. Tries new codes until one is free; returns the code.
     async createRoom(meta) {
@@ -105,13 +151,25 @@ function createRoomNet(store) {
 
     // Player side
     watchPrivate: (code, cb) => store.watch(`roomPrivate/${code}/${store.uid}`, cb),
-    sendAction: (code, action) => store.set(`roomActions/${code}/${store.uid}`, { ...action, n: Date.now() + Math.random() }),
+    // Every move carries a tag `n` that is never reused (a counter plus randomness, as text), so the dealer can tell a
+    // new move from the same one reported twice. (A number like Date.now() + Math.random() is NOT safe: it is too
+    // big to keep much of the fraction, so two quick moves in the same millisecond could get the same tag.)
+    sendAction(code, action) {
+      const n = `${Date.now()}-${++actionCounter}-${Math.random().toString(36).slice(2, 8)}`;
+      return store.set(`roomActions/${code}/${store.uid}`, { ...action, n });
+    },
 
     // Public list of open tables. Each entry carries `beat` (when the host last refreshed it); stale ones are hidden.
     publishLobby: (code, entry) => store.set(`lobby/${code}`, entry),
     removeLobby: code => store.remove(`lobby/${code}`),
     watchLobby: cb => store.watch('lobby', all => cb(all || {})),
     getLobby: () => store.get('lobby'),
+
+    // Tournaments: the host publishes final places; players mark the ones they sat in, and the site counts them later
+    publishTourneyResults: (code, data) => store.set(`tourneys/${code}/results`, data),
+    getTourney: code => store.get(`tourneys/${code}/results`),
+    markTourneyPlayed: code => store.set(`tourneyPlayed/${store.uid}/${code}`, Date.now()),
+    getTourneyPlayed: () => store.get(`tourneyPlayed/${store.uid}`),
 
     // Arena scores: every table publishes its own, and the standings add them up (see arena.js)
     publishArenaTable: (arenaId, code, data) => store.set(`arenas/${arenaId}/tables/${code}`, data),

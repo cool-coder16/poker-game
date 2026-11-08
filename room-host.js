@@ -53,6 +53,7 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
   const H = {
     seq: 0, deadline: null, waiter: null, inbox: {}, left: [], status: 'playing', winner: null, endReason: null,
     rebuy: [], away: {}, lastWaitKey: '',
+    eliminated: [], places: null, botSeq: 0,   // elimination order (first out first) and the final standings
     scores: {}, names: {}, roundNo: 0, round: null, roundResult: null,   // arena
   };
   let t;                              // the engine table
@@ -85,7 +86,7 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
     await net.publishState(code, {
       seq: H.seq, now: Date.now(),
       turnMs: H.deadline ? Math.max(0, H.deadline - Date.now()) : null,   // time left, so players' clocks needn't match ours
-      status: H.status, winner: H.winner, endReason: H.endReason, mode,
+      status: H.status, winner: H.winner, endReason: H.endReason, mode, kind: meta.kind || null, places: H.places,
       round: H.round ? { n: H.round.n, hands: H.round.hands, of: roundHands } : null,
       roundResult: H.roundResult,
       view: publicView(t), log: t.log.slice(-25),
@@ -93,6 +94,7 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
     await net.saveHostState(code, {
       table: t, seq: H.seq, left: H.left, status: H.status,
       scores: H.scores, names: H.names, roundNo: H.roundNo, round: H.round, roundResult: H.roundResult,
+      eliminated: H.eliminated, places: H.places,
     });
   }
 
@@ -100,16 +102,17 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
   const publishHoles = () => Promise.all(
     t.seats.filter(s => !s.isBot).map(s => net.publishPrivate(code, s.id, { handNo: t.handNo, hole: s.hole.map(c => c.id) })));
 
-  // The line in the public list of open tables (it also tells everyone we are still here)
+  // The line in the public list of tables and tournaments (it also tells everyone we are still here)
   function listing() {
     const me = t.seats.find(s => s.id === net.uid);
-    return {
-      code, mode, host: net.uid, hostName: me ? me.name : meta.hostName, name: meta.name || '',
-      sb: t.sb, startChips: meta.startChips, seats: t.seats.filter(s => !s.isBot).length, max: maxSeats,
-      arena: meta.arena || null, arenaEnd: meta.arenaEnd || null, beat: Date.now(),
-    };
+    return makeListing({
+      code, meta, hostName: me ? me.name : meta.hostName, status: H.status === 'finished' ? 'finished' : 'playing',
+      humans: t.seats.filter(s => !s.isBot).length, bots: t.seats.filter(s => s.isBot).length,
+      sb: t.sb, max: meta.size || maxSeats,
+    });
   }
-  const publishListing = () => (continuous ? net.publishLobby(code, listing()).catch(() => {}) : Promise.resolve());
+  const listed = continuous || Boolean(meta.kind);
+  const publishListing = () => (listed ? net.publishLobby(code, listing()).catch(() => {}) : Promise.resolve());
 
   // ---------- Moves ----------
   async function botMove(idx) {
@@ -168,7 +171,7 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
     // 2. Newcomers sit down (the arena makes them wait for the next round). A full table turns the rest away.
     Object.entries(wanted).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0)).forEach(([uid, info]) => {
       if (t.seats.some(s => s.id === uid) || H.left.includes(uid)) return;
-      if (t.seats.length >= maxSeats) { net.leaveSeat(code, uid).catch(() => {}); return; }
+      if (t.seats.filter(s => !s.isBot).length >= maxSeats) { net.leaveSeat(code, uid).catch(() => {}); return; }
       const seat = newSeat({ id: uid, name: info.name, avatar: info.avatar || '😎', color: info.color || '#2f8f5b', chips: mode === 'arena' ? 0 : meta.startChips });
       seat.waiting = mode === 'arena';
       addSeat(t, seat);
@@ -178,12 +181,34 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
     H.rebuy = [];
   }
 
+  // Arena tables with `fillBots`: bots keep a lone player company (up to ARENA_MIN_TABLE players) and step aside
+  // as humans arrive. They play like any bot but never appear in the standings or earn rating points.
+  function balanceBots() {
+    if (!meta.fillBots) return;
+    const humansHere = t.seats.filter(s => !s.isBot && here(s)).length;
+    const want = humansHere === 0 ? 0 : Math.max(0, ARENA_MIN_TABLE - humansHere);
+    const bots = t.seats.filter(s => s.isBot);
+    if (bots.length > want) removeSeats(t, bots.slice(want).map(b => b.id));
+    const keys = Object.keys(BOT_PROFILES);
+    for (let i = t.seats.filter(s => s.isBot).length; i < want; i++) {
+      const used = new Set(t.seats.map(s => s.botKey || s.name));
+      const key = keys.find(k => !used.has(k)) || keys[i % keys.length];
+      const profile = BOT_PROFILES[key];
+      const taken = new Set(t.seats.map(s => s.name));
+      const name = profile.names.find(n => !taken.has(n)) || `${profile.label} ${++H.botSeq}`;
+      addSeat(t, newSeat({ id: 'bot-f' + (++H.botSeq), name, avatar: profile.avatar, color: profile.color, isBot: true, botKey: key, chips: meta.startChips }));
+    }
+  }
+
   // Each mode answers "what happens before the next hand?" with 'deal', 'wait' (not enough players) or 'end'
   const prepare = {
     // Private room: when a hand ends, leavers cash out, the game may be over, and the blinds may rise
     async freezeout() {
       if (t.phase === 'hand-over') {
         t.seats.forEach(s => { if (H.left.includes(s.id)) s.chips = 0; });   // people who left take their chips with them
+        // Whoever has just run out of chips is knocked out; several in one hand: the smaller starting stack places lower
+        const busted = t.seats.filter(s => s.chips === 0 && s.handStartChips > 0 && !H.eliminated.includes(s.id));
+        H.eliminated.push(...knockoutOrder(busted.map(s => ({ id: s.id, startChips: s.handStartChips }))));
         if (alive().length < 2 || alive().every(s => s.isBot)) return 'end';
         if (meta.rising) { t.sb = stepSmallBlind(meta.sb, Math.floor(t.handNo / (meta.handsPerLevel || 10))); t.bb = t.sb * 2; }
       }
@@ -213,6 +238,7 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
         syncSeats();
       }
       if (Date.now() >= meta.arenaEnd) return 'end';
+      balanceBots();
       const players = t.seats.filter(here);
       if (players.length < 2) return 'wait';
       startRound(players);
@@ -249,11 +275,24 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
     await publish();
   }
 
+  // Final standings for a freezeout. A tournament (meta.kind) also publishes them so that rating points can be counted later.
+  async function recordPlaces(standing) {
+    const byId = id => t.seats.find(s => s.id === id);
+    const ranked = finalPlaces(standing.map(s => s.id), H.eliminated);
+    H.places = ranked.map(p => ({ id: p.id, name: (byId(p.id) || {}).name || p.id, place: p.place, isBot: Boolean(byId(p.id) && byId(p.id).isBot) }));
+    if (!meta.kind) return;
+    const humans = H.places.filter(p => !p.isBot);
+    const results = { code, kind: meta.kind, finished: Date.now(), n: humans.length, places: {} };
+    humans.forEach((p, i) => { results.places[p.id] = { name: p.name, place: i + 1 }; });   // places among the humans
+    await net.publishTourneyResults(code, results).catch(() => {});
+  }
+
   async function finishGame() {
     H.status = 'finished';
     const standing = alive().sort((a, b) => b.chips - a.chips);
     H.winner = mode === 'arena' ? null : (standing.length ? standing[0].id : null);
     H.endReason = mode === 'arena' ? 'arena-over' : (standing.length === 1 ? 'last-standing' : 'humans-out');
+    if (mode === 'freezeout') await recordPlaces(standing);
     await publish();
     await net.updateMeta(code, { status: 'finished' }).catch(() => {});
     await net.removeLobby(code).catch(() => {});
@@ -344,7 +383,7 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
         if (present.has(s.id)) delete H.away[s.id]; else if (!H.away[s.id]) H.away[s.id] = now;
       });
     }));
-    if (continuous) { await publishListing(); beatTimer = setInterval(publishListing, T.beatMs); }
+    if (listed) { await publishListing(); beatTimer = setInterval(publishListing, T.beatMs); }
     if (resume) await publish();                   // show the restored table straight away
     await loop();
   }

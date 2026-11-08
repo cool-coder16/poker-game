@@ -66,12 +66,14 @@ function renderAccount() {
   // Rating (career points from season placements)
   root.appendChild(section('Rating',
     tiles(
-      tile('Rating points', fmt(profile.points), 'seasons + Arenas'),
+      tile('Rating points', fmt(profile.points), 'seasons, Arenas, tournaments'),
       tile('Seasons played', fmt(profile.seasons), `${SEASON_MIN_HANDS}+ hands each`),
       tile('Best finish', profile.bestRank ? '#' + profile.bestRank : '-'),
       tile('High score', fmt(profile.high), 'best run ever'),
       tile('Arena points', fmt(profile.arenaPoints), 'included in your rating'),
       tile('Arenas counted', fmt(profile.arenas), profile.arenaBest ? `best finish #${profile.arenaBest}` : 'top 3 earn points'),
+      tile('Tournament points', fmt(profile.tourneyPoints), 'included in your rating'),
+      tile('Tournaments counted', fmt(profile.tourneys), profile.tourneyBest ? `best finish #${profile.tourneyBest}` : 'top 3 earn points'),
     )));
 
   // This season
@@ -101,6 +103,9 @@ function renderAccount() {
   // Recent Arenas (arena-rating.js totals these up after each one finishes)
   if (profile.arenaLog.length) root.appendChild(section('Recent Arenas', arenaTable(profile.arenaLog)));
 
+  // Recent tournaments (tourney-rating.js adds these after each one finishes)
+  if (profile.tourneyLog.length) root.appendChild(section('Recent tournaments', tourneyTable(profile.tourneyLog)));
+
   // Past seasons
   if (profile.history.length) root.appendChild(section('Past seasons', historyTable(profile.history)));
 }
@@ -114,6 +119,21 @@ function arenaTable(log) {
     const tr = document.createElement('tr');
     [arenaLabel(l.id).replace(' UTC', '') + ' · ' + l.id.slice(0, 4) + '-' + l.id.slice(4, 6) + '-' + l.id.slice(6, 8),
       `#${l.rank} of ${l.of}`, l.points ? '+' + l.points : '0'].forEach(t => tr.appendChild(el('td', '', t)));
+    table.appendChild(tr);
+  });
+  const wrap = el('div', 'table-scroll');
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function tourneyTable(log) {
+  const table = el('table', 'lb');
+  const head = document.createElement('tr');
+  ['Tournament', 'Place', 'Rating points'].forEach(t => head.appendChild(el('th', '', t)));
+  table.appendChild(head);
+  log.forEach(l => {
+    const tr = document.createElement('tr');
+    [l.kind === 'sng' ? 'Sit & Go' : 'Scheduled', `#${l.place} of ${l.of}`, l.points ? '+' + l.points : '0'].forEach(t => tr.appendChild(el('td', '', t)));
     table.appendChild(tr);
   });
   const wrap = el('div', 'table-scroll');

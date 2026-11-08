@@ -4,7 +4,7 @@
 //
 // room.html?code=ABCDE        joins a real room, open table or arena table.
 // room.html?local             one-tab demo of a private room (with bots, no network).
-// room.html?local=open|arena  one-tab demo of an open table / arena table.
+// room.html?local=open|arena|sng  one-tab demo of an open table / arena table / Sit & Go.
 //
 // Remember: the database drops empty arrays, so anything that might be empty is read with `|| []`.
 
@@ -15,6 +15,7 @@ const CLAIM_DELAY_MS = 12000;   // how long the dealer must be gone before anoth
 const SEAT_COLORS = ['#2f8f5b', '#c4572b', '#2b6fc4', '#8e5bd6', '#d6a52b', '#2bb5c4', '#d62b7a', '#6b7a90'];
 const colorFor = uid => SEAT_COLORS[[...uid].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % SEAT_COLORS.length];
 const isContinuous = meta => Boolean(meta) && (meta.mode === 'open' || meta.mode === 'arena');   // no lobby, people come and go
+const isTournament = meta => Boolean(meta) && (meta.kind === 'sng' || meta.kind === 'scheduled');   // Sit & Go or scheduled
 
 let code = '';
 let net = null;
@@ -32,6 +33,7 @@ let lastSeq = -1;           // newest state number drawn
 let lastLogId = 0;
 let seatKey = '';           // which players the table was last built for
 let overShown = false;
+let lobbyBeat = null;         // timer that keeps a tournament's line in the public list fresh while it is still gathering players
 let turnDeadline = 0, turnName = '';
 
 // ---------- Which screen is showing ----------
@@ -104,6 +106,7 @@ async function joinRoom() {
   }
   await watchEverything();
   if (meta.arena) net.markArenaPlayed(meta.arena).catch(() => {});   // so the site counts this Arena toward your rating later
+  if (isTournament(meta) && !LOCAL) net.markTourneyPlayed(code).catch(() => {});   // and this tournament
   // I'm the dealer. A private room that was already running (I refreshed) resumes; open and arena tables start or resume.
   if (meta.host === myId && (isContinuous(meta) || meta.status === 'playing')) await startOrResumeHost();
 }
@@ -116,7 +119,9 @@ async function startLocal() {
   myId = 'you';
   myName = typeof profile !== 'undefined' && profile ? profile.displayName : 'You';
   const rounds = Number(roomParams.get('rounds'));   // ?local=arena&rounds=3 makes rounds short, handy for trying it out
-  const meta = kind
+  const meta = kind === 'sng'
+    ? tournamentMeta('sng', myName, { size: 3, allowBots: true })   // a 3-player Sit & Go: you and two bots, so it starts at once
+    : kind
     ? { ...tableMeta(kind, myName, rounds >= 2 ? { roundHands: rounds } : {}), allowBots: true }
     : { hostName: myName, startChips: 1000, sb: 10, turnSeconds: 30, rising: false, handsPerLevel: 10, allowBots: true };
   code = await net.createRoom(meta);
@@ -126,7 +131,7 @@ async function startLocal() {
     b2: { key: 'fox', name: BOT_PROFILES.fox.names[0] },
   });
   await watchEverything();
-  if (kind) await startOrResumeHost();
+  if (kind === 'open' || kind === 'arena') await startOrResumeHost();   // (a demo Sit & Go starts itself, like a real one)
 }
 
 async function watchEverything() {
@@ -157,7 +162,7 @@ async function startOrResumeHost() {
 // If the dealer has gone, a seated player takes over after a pause. The database rules only allow this
 // when the dealer really is disconnected. The new dealer carries on from the table the old one saved.
 function watchTheDealer(meta, seated) {
-  const dealerGone = !isHost && seated && meta.status === 'playing' && !(roomData.presence || {})[meta.host];
+  const dealerGone = !isHost && seated && meta.status !== 'finished' && !(roomData.presence || {})[meta.host];
   if (dealerGone && !claimTimer) {
     claimTimer = setTimeout(async () => {
       claimTimer = null;
@@ -191,12 +196,17 @@ function render() {
   if (isHost && !hostCtl && !hostStarting && meta.status !== 'lobby' && meta.status !== 'finished') startOrResumeHost();
   watchTheDealer(meta, seated);
 
+  if (meta.status === 'finished' && isTournament(meta) && !roomData.state) {
+    return problem('This tournament was cancelled', 'Not enough players showed up. Try the next one!', [{ label: 'Tournaments', href: 'tournaments.html' }]);
+  }
   if (meta.status === 'lobby') {
     if (overShown) { overShown = false; $('roomOver').close(); }
     resetTableState();
     show('lobbyView');
     renderLobby();
+    lobbyHostDuties(meta);
   } else {
+    stopLobbyBeat();
     show('tableView');
     renderGame();
   }
@@ -259,10 +269,75 @@ function renderLobby() {
   $('btnAddBot').disabled = total >= MAX_ROOM_SEATS;
   $('botHint').textContent = isHost && meta.allowBots === false ? 'Bots are turned off for this room.' : '';
 
-  $('btnStart').classList.toggle('hidden', !isHost);
+  // Tournaments have fixed rules and start by themselves
+  const tourney = isTournament(meta);
+  $('tourneyBox').classList.toggle('hidden', !tourney);
+  $('optionsPanel').classList.toggle('hidden', tourney);
+  if (tourney) renderTourneyBox(meta, total);
+
+  $('btnStart').classList.toggle('hidden', !isHost || tourney);
   $('btnStart').disabled = total < 2;
-  $('startHint').textContent = isHost ? (total < 2 ? 'You need at least 2 players.' : '') : 'Waiting for the host to start the game…';
+  $('startHint').textContent = tourney ? '' : isHost ? (total < 2 ? 'You need at least 2 players.' : '') : 'Waiting for the host to start the game…';
   $('btnLeaveLobby').textContent = isHost ? 'Close room' : 'Leave room';
+}
+
+// ---------- Tournaments: the lobby ----------
+const humansHere = () => Object.keys(roomData.seats || {}).filter(uid => (roomData.presence || {})[uid]).length;
+
+function renderTourneyBox(meta, total) {
+  const sng = meta.kind === 'sng';
+  $('tourneyTitle').textContent = sng ? `Sit & Go · ${meta.size} players` : `Scheduled tournament · ${tourneyLabel(meta.startAt)}`;
+  const left = sng ? null : countdownText(meta.startAt - Date.now());
+  $('tourneyInfo').textContent = sng
+    ? `Starts as soon as the table is full: ${total} of ${meta.size} seated.`
+    : (Date.now() < meta.startAt
+      ? `Starts in ${left}. ${total} registered; needs at least ${meta.minPlayers || TOURNEY_MIN_PLAYERS} to run (up to ${meta.size}).`
+      : 'Starting…');
+  $('tourneyRules').textContent = `Freezeout: ${fmt(meta.startChips)} chips each, blinds ${meta.sb}/${meta.sb * 2} rising every ${meta.handsPerLevel} hands, no rebuys. `
+    + 'Top 3 earn rating points (needs at least 3 human players; bots never earn points).';
+}
+
+// The host of a tournament lobby: keep the public list fresh, and start (or cancel) when it's time
+function lobbyHostDuties(meta) {
+  if (!isHost || !isTournament(meta)) { stopLobbyBeat(); return; }
+  if (!lobbyBeat) {
+    publishLobbyLine();
+    lobbyBeat = setInterval(publishLobbyLine, 20000);
+  }
+  maybeStartTournament();
+}
+
+function stopLobbyBeat() { if (lobbyBeat) { clearInterval(lobbyBeat); lobbyBeat = null; } }
+
+function publishLobbyLine() {
+  if (!roomData || !roomData.meta || roomData.meta.status !== 'lobby') return;
+  const meta = roomData.meta;
+  net.publishLobby(code, makeListing({
+    code, meta, hostName: myName, status: 'lobby', humans: Object.keys(roomData.seats || {}).length,
+    bots: Object.keys(roomData.bots || {}).length, sb: meta.sb, max: meta.size,
+  })).catch(() => {});
+}
+
+// Ask tournament.js what to do: wait, start (full table / start time reached) or cancel (start time reached with too few)
+async function maybeStartTournament() {
+  if (!roomData || !isHost || hostStarting || roomData.meta.status !== 'lobby' || !isTournament(roomData.meta)) return;
+  const total = Object.keys(roomData.seats || {}).length + Object.keys(roomData.bots || {}).length;
+  const action = tourneyAction(roomData.meta, humansHere() + Object.keys(roomData.bots || {}).length, total);
+  if (action === 'wait') return;
+  hostStarting = true;
+  try {
+    if (action === 'cancel') {
+      await net.updateMeta(code, { status: 'finished' });
+      await net.removeLobby(code);
+      return;
+    }
+    // A scheduled tournament starts with whoever is actually here: people who registered and left are removed first
+    if (roomData.meta.kind === 'scheduled') {
+      const gone = Object.keys(roomData.seats || {}).filter(uid => !(roomData.presence || {})[uid]);
+      await Promise.all(gone.map(uid => net.leaveSeat(code, uid)));
+    }
+  } finally { hostStarting = false; }
+  await startGame();
 }
 
 // ---------- Lobby actions (private rooms) ----------
@@ -306,7 +381,14 @@ async function startGame() {
 }
 
 async function leaveLobby() {
-  if (isHost) await net.deleteRoom(code); else await net.leaveSeat(code);
+  if (isHost) {
+    // A tournament lobby has other people waiting: hand it to one of them. Otherwise close the room.
+    const next = isTournament(roomData.meta) && Object.entries(roomData.seats || {})
+      .filter(([uid]) => uid !== myId && (roomData.presence || {})[uid])
+      .sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))[0];
+    if (next) { stopLobbyBeat(); await net.setHost(code, next[0]); await net.leaveSeat(code); }
+    else { stopLobbyBeat(); await net.removeLobby(code).catch(() => {}); await net.deleteRoom(code); }
+  } else await net.leaveSeat(code);
   location.href = 'rooms.html';
 }
 
@@ -362,10 +444,12 @@ function noteText() {
   if (meta.mode === 'arena') {
     const where = st.round ? `round ${st.round.n}, hand ${Math.min(st.round.hands + 1, st.round.of)} of ${st.round.of}` : 'between rounds';
     text = `Arena ${arenaLabel(meta.arena)} · ${where} · arena ends in ${countdownText(meta.arenaEnd - Date.now())}`;
+    if (meta.fillBots) text += ' · bots fill empty seats (they never score)';
   } else if (meta.mode === 'open') {
     text = `Open table · blinds ${fmt(view.sb)}/${fmt(view.bb)} · sit down or leave any time · rebuy if you bust`;
   } else {
-    text = `Room ${code} · blinds ${fmt(view.sb)}/${fmt(view.bb)} · no rebuys, last player with chips wins`;
+    const title = meta.kind === 'sng' ? 'Sit & Go' : meta.kind === 'scheduled' ? `Tournament ${tourneyLabel(meta.startAt)}` : `Room ${code}`;
+    text = `${title} · blinds ${fmt(view.sb)}/${fmt(view.bb)} · no rebuys, last player with chips wins`;
   }
   if (waitingToSit) text += meta.mode === 'arena' ? ' · you play from the next round' : ' · you are dealt in at the next hand';
   return text;
@@ -462,6 +546,7 @@ function showGameOver(st, view, meta) {
   else if (st.endReason === 'humans-out' && winner) text = `Every human player is out. ${winner.name} (a bot) was in the lead with ${fmt(winner.chips)} chips.`;
   else if (st.endReason === 'arena-over') text = 'The arena is over. Check the standings to see where you finished!';
   $('overText').textContent = text;
+  renderStandings(st.places, meta);
   const arenaOver = st.endReason === 'arena-over';
   $('overLink').textContent = arenaOver ? 'Arena standings' : 'Back to rooms';
   $('overLink').href = arenaOver ? 'arena.html' : 'rooms.html';
@@ -469,6 +554,23 @@ function showGameOver(st, view, meta) {
   $('overHint').textContent = isHost || isContinuous(meta) ? '' : 'Waiting for the host to open a new lobby, or leave when you like.';
   setControlsEnabled(false);
   $('roomOver').showModal();
+}
+
+// The final standings, with the rating points a tournament pays (counted the next time you open the site)
+function renderStandings(places, meta) {
+  const ol = $('overPlaces');
+  ol.textContent = '';
+  (places || []).forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = p.name + (p.isBot ? ' (bot)' : '');
+    if (isTournament(meta) && !p.isBot) {
+      const humans = (places || []).filter(x => !x.isBot);
+      const points = tournamentPoints(humans.findIndex(x => x.id === p.id) + 1, humans.length);
+      if (points) { const tag = document.createElement('b'); tag.textContent = ` +${points} rating`; li.appendChild(tag); }
+    }
+    if (p.id === myId) li.className = 'me';
+    ol.appendChild(li);
+  });
 }
 
 async function playAgain() {
@@ -484,6 +586,10 @@ function tick() {
     $('turnTimer').textContent = `⏱ ${turnName} · ${secs}s`;
   }
   if (noteContext && noteContext.meta.mode === 'arena') $('roomNote').textContent = noteText();
+  if (roomData && roomData.meta && roomData.meta.status === 'lobby' && isTournament(roomData.meta)) {
+    renderTourneyBox(roomData.meta, Object.keys(roomData.seats || {}).length + Object.keys(roomData.bots || {}).length);   // the countdown
+    maybeStartTournament();                                                                                              // the host starts it on time
+  }
 }
 
 // ---------- Wiring ----------
