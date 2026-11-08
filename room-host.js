@@ -153,7 +153,11 @@ function createRoomHost({ net, code, meta, seats, bots, resume = null, timing = 
 
   // ---------- Between hands ----------
   const alive = () => t.seats.filter(s => s.chips > 0);
-  const here = s => s.isBot || !present || present.has(s.id);   // connected (bots always are)
+  // Connected (bots always are). Someone whose "I'm here" mark hasn't shown up yet still counts for a few seconds:
+  // on the real database presence arrives a moment after the table opens, and without this grace the first
+  // Arena round was dealt to the bots only, leaving the human with no cards.
+  const here = s => s.isBot || !present || present.has(s.id)
+    || (H.away[s.id] !== undefined && Date.now() - H.away[s.id] < T.absentGraceMs);
 
   // Open tables and the arena: let people come and go. Only ever called between hands.
   function syncSeats() {

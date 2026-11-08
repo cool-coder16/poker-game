@@ -621,6 +621,23 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
     host.stop();
   });
 
+  // On the real database a player's "I'm here" mark arrives a moment after the dealer starts. The first Arena round
+  // used to be dealt to the bots only, so the human saw no cards at all.
+  await test('arena: a player whose presence arrives late is still dealt into the first round', async () => {
+    const room = await setupRoom({ humans: ['ann'], meta: { mode: 'arena', status: 'playing', arena: 'T-3', roundHands: 3, startChips: 1000, maxSeats: 6, fillBots: true, arenaEnd: Date.now() + 60000 }, timing: { roundPauseMs: 0, absentGraceMs: 3000 } });
+    const me = simPlayer(room, 'ann', { seed: 5, passive: true });
+    room.nets.ann.watchRoom(room.code, () => {});
+    // Another player's presence makes the (otherwise empty) presence list exist, as it does on the real database
+    await room.hub.store('zed').set(`rooms/${room.code}/presence/zed`, true);
+    await room.hub.store('ann').remove(`rooms/${room.code}/presence/ann`);
+    const host = await startHost(room);
+    await until(() => (stateOf(room) || {}).round, 3000, 'round 1');
+    const ann = stateOf(room).view.seats.find(x => x.id === 'ann');
+    assert(!ann.waiting && ann.holeCount === 2, 'ann is in the first round with two cards');
+    await until(() => me.hole.length === 2, 3000, 'ann to receive her cards');
+    host.stop();
+  });
+
   console.log(`\n${passed} passed${process.exitCode ? ', SOME FAILED' : ''}`);
   setTimeout(() => process.exit(process.exitCode || 0), 100);
 })();

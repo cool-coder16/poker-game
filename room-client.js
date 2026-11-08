@@ -128,7 +128,7 @@ async function startLocal() {
     : kind
     ? { ...tableMeta(kind, myName, rounds >= 2 ? { roundHands: rounds } : {}), allowBots: true }
     : { hostName: myName, startChips: 1000, sb: 10, turnSeconds: 30, rising: false, handsPerLevel: 10, allowBots: true };
-  if (roomParams.has('watch')) return startLocalWatch(hub);   // ?local=open&watch: you only watch a table that someone else deals
+  if (roomParams.has('watch')) return startLocalWatch(hub, kind || 'open');   // ?local=open&watch: you only watch a table that someone else deals
   code = await net.createRoom(meta);
   await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: 1 });
   await net.setBots(code, {
@@ -141,9 +141,9 @@ async function startLocal() {
 
 // Demo: a pretend player called "Host" deals an open table and plays (checking and calling), with two bots.
 // You are a spectator, and you can chat with them. This is how the spectator view and chat are tried out in one tab.
-async function startLocalWatch(hub) {
+async function startLocalWatch(hub, kind) {
   const hostNet = createRoomNet(hub.store('host'));
-  code = await hostNet.createRoom({ ...tableMeta('open', 'Host'), allowBots: true });
+  code = await hostNet.createRoom({ ...tableMeta(kind, 'Host', kind === 'arena' ? { roundHands: 3 } : {}), allowBots: true });
   await hostNet.joinSeat(code, { name: 'Host', avatar: '🎩', color: '#c4572b', joinedAt: 1 });
   await hostNet.setBots(code, {
     b1: { key: 'shark', name: BOT_PROFILES.shark.names[0] },
