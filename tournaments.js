@@ -44,6 +44,19 @@ function linkButton(label, href, enabled = true) {
 function draw() {
   drawSchedule();
   drawSitAndGos();
+  drawLive();
+}
+
+// Tournaments that are already under way: you can watch
+function drawLive() {
+  const list = $('liveList');
+  list.textContent = '';
+  const live = liveTables(lobby).filter(e => e.kind && e.status === 'playing');
+  $('liveEmpty').textContent = live.length ? '' : 'No tournament is being played right now.';
+  live.forEach(e => list.appendChild(row({
+    title: e.kind === 'sng' ? `${e.hostName || 'Someone'}'s Sit & Go` : `${tourneyLabel(e.startAt)} tournament`,
+    small: `${e.seats} players · in progress`, button: linkButton('Watch', `room.html?code=${e.code}&watch=1`),
+  })));
 }
 
 // The next three scheduled tournaments

@@ -32,15 +32,15 @@ async function createRoom() {
   }
 }
 
-async function joinRoom(e) {
-  e.preventDefault();
+async function joinRoom(e, watch = false) {
+  if (e && e.preventDefault) e.preventDefault();
   showError('');
   const code = normalizeCode($('joinCode').value);
   if (code.length < 4) return showError('Type the room code your friend gave you.');
   try {
     const room = await window.pokerRooms.makeNet().getRoom(code);
     if (!room || !room.meta) return showError(`There is no room with the code ${code}.`);
-    location.href = `room.html?code=${code}`;
+    location.href = `room.html?code=${code}${watch ? '&watch=1' : ''}`;
   } catch (err) {
     showError(/permission/i.test(err.message || '') ? "Couldn't open that room. Is the code right?" : (err.message || String(err)));
   }
@@ -49,4 +49,5 @@ async function joinRoom(e) {
 $('btnSignIn').onclick = openAuthDialog;
 $('btnCreate').onclick = createRoom;
 $('joinForm').onsubmit = joinRoom;
+$('btnWatch').onclick = () => joinRoom(null, true);   // look at a room without taking a seat
 onAuth(ready);

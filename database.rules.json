@@ -43,6 +43,9 @@
           },
           "startAt": {
             ".validate": "newData.isNumber()"
+          },
+          "chat": {
+            ".validate": "newData.isBoolean()"
           }
         },
         "seats": {
@@ -61,6 +64,15 @@
           "$uid": {
             ".write": "auth != null && auth.uid === $uid"
           }
+        },
+        "watchers": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length <= 20"
+          }
+        },
+        "muted": {
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
         }
       }
     },
@@ -129,6 +141,24 @@
         ".write": "auth != null && auth.uid === $uid",
         "$code": {
           ".validate": "$code.matches(/^[A-Z0-9]{4,16}$/) && newData.isNumber()"
+        }
+      }
+    },
+    "chat": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid",
+        "$id": {
+          ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && newData.child('t').val() === now && root.child('rooms/' + $code + '/meta/chat').val() !== false && !root.child('rooms/' + $code + '/muted/' + auth.uid).exists() && (!root.child('chatLast/' + $code + '/' + auth.uid).exists() || root.child('chatLast/' + $code + '/' + auth.uid).val() < now - 1500)",
+          ".validate": "newData.hasChildren(['uid', 'name', 'text', 't']) && newData.child('text').isString() && newData.child('text').val().length >= 1 && newData.child('text').val().length <= 200 && newData.child('name').isString() && newData.child('name').val().length <= 20"
+        }
+      }
+    },
+    "chatLast": {
+      "$code": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && newData.val() === now",
+          ".validate": "newData.isNumber()"
         }
       }
     }

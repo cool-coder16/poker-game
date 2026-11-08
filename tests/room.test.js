@@ -3,7 +3,7 @@
 const assert = require('assert');
 const { load, seeded } = require('./helpers');
 if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
-load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js', 'arena.js', 'arena-rating.js', 'tournament.js', 'tourney-rating.js');
+load('poker.js', 'engine.js', 'bots.js', 'store-memory.js', 'room-net.js', 'room-host.js', 'room-view.js', 'arena.js', 'arena-rating.js', 'tournament.js', 'tourney-rating.js', 'chat.js');
 
 let passed = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -403,6 +403,76 @@ const chipsOf = room => room.hub.peek(`rooms/${room.code}/state`).view.seats.red
     assert(a.meta.arenaEnd > Date.now());
   });
 
+
+
+  // ---------------------------------------------------------------- chat and spectators
+  await test('chat: messages arrive oldest first, only the last N are loaded, the host can delete one or clear them all', async () => {
+    const hub = createMemoryHub();
+    const ann = createRoomNet(hub.store('ann'));
+    const ben = createRoomNet(hub.store('ben'));
+    for (let i = 1; i <= 6; i++) { await (i % 2 ? ann : ben).sendChat('ABCDE', i % 2 ? 'Ann' : 'Ben', 'message ' + i); await sleep(2); }
+    let seen = [];
+    const stop = ben.watchChat('ABCDE', 4, list => { seen = list; });
+    await sleep(10);
+    assert.deepStrictEqual(seen.map(m => m.text), ['message 3', 'message 4', 'message 5', 'message 6'], 'the last 4, oldest first');
+    assert.deepStrictEqual(seen.map(m => m.uid), ['ann', 'ben', 'ann', 'ben']);
+    assert(seen.every(m => typeof m.t === 'number' && m.name), 'each message has a time and a name');
+    assert.strictEqual(hub.peek('chatLast/ABCDE/ann') > 0, true, 'the last-sent time is stored for the rate limit');
+    await ann.deleteChatMessage('ABCDE', seen[3].id);
+    await sleep(10);
+    assert.deepStrictEqual(seen.map(m => m.text), ['message 2', 'message 3', 'message 4', 'message 5']);
+    await ann.clearChat('ABCDE');
+    await sleep(10);
+    assert.deepStrictEqual(seen, []);
+    stop();
+  });
+
+  await test('chat: the host can mute someone and turn chat off, and deleting a room removes its chat', async () => {
+    const hub = createMemoryHub();
+    const host = createRoomNet(hub.store('host'));
+    const code = await host.createRoom({ hostName: 'h', startChips: 150, sb: 10 });
+    await host.setMuted(code, 'ben', true);
+    assert.strictEqual(hub.peek(`rooms/${code}/muted/ben`), true);
+    assert.strictEqual(chatAllowed(hub.peek(`rooms/${code}/meta`), hub.peek(`rooms/${code}/muted`), 'ben').ok, false);
+    await host.setMuted(code, 'ben', false);
+    assert.strictEqual(hub.peek(`rooms/${code}/muted/ben`), null);
+    await host.setChatOn(code, false);
+    assert.strictEqual(chatAllowed(hub.peek(`rooms/${code}/meta`), null, 'ben').ok, false);
+    await host.sendChat(code, 'H', 'bye');
+    await host.deleteRoom(code);
+    assert.strictEqual(hub.peek(`chat/${code}`), null);
+    assert.strictEqual(hub.peek(`chatLast/${code}`), null);
+  });
+
+  await test('spectators: they can watch a running table without a seat, are counted, and never see anyone\'s hole cards', async () => {
+    const room = await setupRoom({ humans: ['ann', 'ben'], meta: { startChips: 2000 } });
+    ['ann', 'ben'].forEach((u, i) => simPlayer(room, u, { seed: 150 + i, passive: true }));
+    const watcher = createRoomNet(room.hub.store('wendy'));
+    await watcher.announceWatcher(room.code, 'Wendy');
+    const problems = [];
+    let drawn = 0, sawStates = 0;
+    watcher.watchRoom(room.code, r => {
+      const st = r && r.state; if (!st) return;
+      sawStates++;
+      try {
+        const shown = tableFromState(st.view, 'wendy', null);        // no seat of her own: must still draw
+        drawn++;
+        shown.list.forEach(p => p.hole.forEach(c => { if (!p.showCards) assert.strictEqual(c.id, -1, 'a spectator saw a real card'); }));
+      } catch (e) { problems.push(e.message); }
+    });
+    const host = await startHost(room);
+    await until(() => sawStates > 15, 10000, 'the spectator to see the game');
+    const rd = await watcher.getRoom(room.code);
+    assert.deepStrictEqual(Object.keys(rd.watchers), ['wendy']);
+    assert.strictEqual(rd.watchers.wendy.name, 'Wendy');
+    assert(!rd.seats.wendy, 'she has no seat');
+    assert.deepStrictEqual(problems, []);
+    assert(drawn > 10);
+    room.hub.disconnect('wendy');                                       // closing the tab removes her from the watcher list
+    await sleep(20);
+    assert.strictEqual(room.hub.peek(`rooms/${room.code}/watchers`), null);
+    host.stop();
+  });
 
   // ---------------------------------------------------------------- tournaments
   await test('a freezeout publishes final places; a tournament also publishes results for the rating', async () => {

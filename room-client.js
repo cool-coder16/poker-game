@@ -27,12 +27,15 @@ let hostCtl = null;         // the dealer (room-host.js) if I'm the host
 let hostStarting = false;   // true while the dealer is being set up, so we never start two
 let claimTimer = null;      // set when the dealer has gone: we will take over if they don't come back
 let wasSeated = false;
+let spectating = false;    // watching without a seat
 let controlsSeq = -1;       // the state number my controls were last set up for
 let answeredSeq = -1;       // the state number I already sent a move for
 let lastSeq = -1;           // newest state number drawn
 let lastLogId = 0;
 let seatKey = '';           // which players the table was last built for
 let overShown = false;
+let chatNoticeUntil = 0;   // a notice like "Slow down" stays visible until this time, even if the page redraws
+let chatMessages = [], chatBlocked = loadBlocked(), lastChatSent = 0, lastChatSeen = '', chatUnread = 0, chatOpen = false;   // chat (see chat.js)
 let lobbyBeat = null;         // timer that keeps a tournament's line in the public list fresh while it is still gathering players
 let turnDeadline = 0, turnName = '';
 
@@ -99,14 +102,15 @@ async function joinRoom() {
   const seated = data.seats && data.seats[myId];
   if (!seated) {
     if (meta.status === 'finished') return problem('That table has closed', 'The game there is over.', backToRooms);
-    if (meta.status !== 'lobby' && !isContinuous(meta)) return problem('That game has already started', 'Ask the host to make a new room.', backToRooms);
     const count = Object.keys(data.seats || {}).length + (isContinuous(meta) ? 0 : Object.keys(data.bots || {}).length);
-    if (count >= (meta.maxSeats || MAX_ROOM_SEATS)) return problem('That table is full', 'Try another table.', backToRooms);
-    await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: Date.now() });
+    const full = count >= (meta.maxSeats || MAX_ROOM_SEATS);
+    const canSit = !roomParams.has('watch') && !full && (meta.status === 'lobby' || isContinuous(meta));
+    if (canSit) await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: Date.now() });
+    else spectating = true;   // a full table, a game already under way, or you asked to watch: just watch
   }
   await watchEverything();
-  if (meta.arena) net.markArenaPlayed(meta.arena).catch(() => {});   // so the site counts this Arena toward your rating later
-  if (isTournament(meta) && !LOCAL) net.markTourneyPlayed(code).catch(() => {});   // and this tournament
+  if (meta.arena && !spectating) net.markArenaPlayed(meta.arena).catch(() => {});   // so the site counts this Arena toward your rating later
+  if (isTournament(meta) && !LOCAL && !spectating) net.markTourneyPlayed(code).catch(() => {});   // and this tournament
   // I'm the dealer. A private room that was already running (I refreshed) resumes; open and arena tables start or resume.
   if (meta.host === myId && (isContinuous(meta) || meta.status === 'playing')) await startOrResumeHost();
 }
@@ -124,6 +128,7 @@ async function startLocal() {
     : kind
     ? { ...tableMeta(kind, myName, rounds >= 2 ? { roundHands: rounds } : {}), allowBots: true }
     : { hostName: myName, startChips: 1000, sb: 10, turnSeconds: 30, rising: false, handsPerLevel: 10, allowBots: true };
+  if (roomParams.has('watch')) return startLocalWatch(hub);   // ?local=open&watch: you only watch a table that someone else deals
   code = await net.createRoom(meta);
   await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: 1 });
   await net.setBots(code, {
@@ -134,10 +139,51 @@ async function startLocal() {
   if (kind === 'open' || kind === 'arena') await startOrResumeHost();   // (a demo Sit & Go starts itself, like a real one)
 }
 
+// Demo: a pretend player called "Host" deals an open table and plays (checking and calling), with two bots.
+// You are a spectator, and you can chat with them. This is how the spectator view and chat are tried out in one tab.
+async function startLocalWatch(hub) {
+  const hostNet = createRoomNet(hub.store('host'));
+  code = await hostNet.createRoom({ ...tableMeta('open', 'Host'), allowBots: true });
+  await hostNet.joinSeat(code, { name: 'Host', avatar: '🎩', color: '#c4572b', joinedAt: 1 });
+  await hostNet.setBots(code, {
+    b1: { key: 'shark', name: BOT_PROFILES.shark.names[0] },
+    b2: { key: 'fox', name: BOT_PROFILES.fox.names[0] },
+  });
+  await hostNet.announcePresence(code);
+  const room = await hostNet.getRoom(code);
+  hostNet.watchRoom(code, r => {   // the pretend host just checks or calls
+    const st = r && r.state;
+    if (st && st.view.toAct === 'host') hostNet.sendAction(code, { seq: st.seq, type: 'call' });
+  });
+  createRoomHost({ net: hostNet, code, meta: room.meta, seats: room.seats, bots: room.bots }).run();
+  hostNet.sendChat(code, 'Host', 'Welcome! You are watching this table.');
+  spectating = true;
+  await watchEverything();
+}
+
 async function watchEverything() {
-  await net.announcePresence(code);
-  net.watchPrivate(code, p => { myPrivate = p; if (roomData) render(); });
+  if (spectating) await net.announceWatcher(code, myName);   // counted as watching; no seat, so no private cards to read
+  else {
+    await net.announcePresence(code);
+    net.watchPrivate(code, p => { myPrivate = p; if (roomData) render(); });
+  }
   net.watchRoom(code, r => { roomData = r; render(); });
+  initChat();
+}
+
+// A spectator takes a free seat at an open or arena table
+async function sitDown() {
+  $('btnSit').disabled = true;
+  try {
+    await net.joinSeat(code, { name: myName, avatar: '😎', color: colorFor(myId), joinedAt: Date.now() });
+    await net.stopWatching(code);
+    await net.announcePresence(code);
+    net.watchPrivate(code, p => { myPrivate = p; if (roomData) render(); });
+    if (roomData.meta.arena) net.markArenaPlayed(roomData.meta.arena).catch(() => {});
+  } catch (err) {
+    $('roomNote').textContent = "Couldn't sit down: " + (err.message || err);
+  }
+  $('btnSit').disabled = false;
 }
 
 // ---------- Being the dealer ----------
@@ -187,9 +233,10 @@ function render() {
   isHost = meta.host === myId;
   $('pageSub').textContent = LOCAL ? 'Local demo' : (MODE_TITLES[meta.mode] || 'Room ') + code;
   const seated = Boolean(roomData.seats && roomData.seats[myId]);
-  if (seated) wasSeated = true;
+  if (seated) { wasSeated = true; spectating = false; }   // (sitting down at an open table ends spectating)
   else if (wasSeated) return problem('You were removed from the room', 'The host removed you from this room.', backToRooms);
-  else return;
+  else if (!spectating) return;
+  renderChatState();
 
   // Dealing duties follow meta.host: take them up when named, drop them when someone else is
   if (hostCtl && !isHost) { hostCtl.stop(); hostCtl = null; }
@@ -277,8 +324,8 @@ function renderLobby() {
 
   $('btnStart').classList.toggle('hidden', !isHost || tourney);
   $('btnStart').disabled = total < 2;
-  $('startHint').textContent = tourney ? '' : isHost ? (total < 2 ? 'You need at least 2 players.' : '') : 'Waiting for the host to start the game…';
-  $('btnLeaveLobby').textContent = isHost ? 'Close room' : 'Leave room';
+  $('startHint').textContent = spectating ? 'You are watching.' : tourney ? '' : isHost ? (total < 2 ? 'You need at least 2 players.' : '') : 'Waiting for the host to start the game…';
+  $('btnLeaveLobby').textContent = spectating ? 'Stop watching' : isHost ? 'Close room' : 'Leave room';
 }
 
 // ---------- Tournaments: the lobby ----------
@@ -381,6 +428,7 @@ async function startGame() {
 }
 
 async function leaveLobby() {
+  if (spectating) { await net.stopWatching(code); location.href = 'rooms.html'; return; }
   if (isHost) {
     // A tournament lobby has other people waiting: hand it to one of them. Otherwise close the room.
     const next = isTournament(roomData.meta) && Object.entries(roomData.seats || {})
@@ -395,6 +443,7 @@ async function leaveLobby() {
 // ---------- Leaving a game in progress ----------
 async function leaveGame() {
   const meta = roomData.meta;
+  if (spectating) { await net.stopWatching(code); location.href = 'rooms.html'; return; }
   if (isContinuous(meta)) {
     if (!confirm('Leave this table? You take your chips with you.')) return;
     if (isHost) {
@@ -435,10 +484,10 @@ function resetTableState() {
 }
 
 // The line above the table: what kind of table this is, and its blinds / round / clock
-let noteContext = null;   // { meta, st, view, hostOffline, waitingToSit } from the latest draw (the arena clock re-uses it every tick)
+let noteContext = null;   // { meta, st, view, hostOffline, waitingToSit, watching } from the latest draw (the arena clock re-uses it every tick)
 
 function noteText() {
-  const { meta, st, view, hostOffline, waitingToSit } = noteContext;
+  const { meta, st, view, hostOffline, waitingToSit, watching } = noteContext;
   if (hostOffline) return '⚠ The dealer seems to be offline. Another player will take over in a few seconds…';
   let text;
   if (meta.mode === 'arena') {
@@ -452,6 +501,9 @@ function noteText() {
     text = `${title} · blinds ${fmt(view.sb)}/${fmt(view.bb)} · no rebuys, last player with chips wins`;
   }
   if (waitingToSit) text += meta.mode === 'arena' ? ' · you play from the next round' : ' · you are dealt in at the next hand';
+  if (watching) text += ' · you are watching';
+  const watchers = Object.keys(roomData.watchers || {}).length;
+  if (watchers) text += ` · 👁 ${watchers} watching`;
   return text;
 }
 
@@ -469,7 +521,8 @@ function renderGame() {
   noteContext = {
     meta, st, view,
     hostOffline: !isHost && meta.status === 'playing' && !(roomData.presence || {})[meta.host],
-    waitingToSit: !me,      // I have a seat but the dealer hasn't dealt me in yet
+    waitingToSit: !me && !spectating,   // I have a seat but the dealer hasn't dealt me in yet
+    watching: spectating,
   };
   $('roomNote').textContent = noteText();
 
@@ -495,6 +548,11 @@ function renderGame() {
     message = `Round ${st.roundResult.n}: ` + st.roundResult.rows.map(r => `${r.name} +${r.points}`).join(' · ');
   }
   setMessage(message);
+
+  // Spectators: the leave button says so, and at open/arena tables they can take a free seat
+  $('btnLeaveGame').textContent = spectating ? 'Stop watching' : 'Leave game';
+  const seatedHumans = Object.keys(roomData.seats || {}).length;
+  $('btnSit').classList.toggle('hidden', !(spectating && isContinuous(meta) && meta.status !== 'finished' && seatedHumans < (meta.maxSeats || 6)));
 
   // The rebuy button (open tables): when I'm out of chips
   $('btnRebuy').classList.toggle('hidden', !(meta.mode === 'open' && me && me.chips === 0 && !me.inHand));
@@ -592,6 +650,95 @@ function tick() {
   }
 }
 
+// ---------- Chat ----------
+const CHAT_DEFAULT_HINT = 'Be kind. Everyone at this table can read this.';
+// Names and messages come from users, so they are only ever added as text (never as HTML).
+function initChat() {
+  $('chat').classList.remove('hidden');
+  net.watchChat(code, CHAT_SHOWN, list => {
+    const fresh = list.filter(m => m.id > lastChatSeen && m.uid !== myId && !chatBlocked.includes(m.uid));
+    if (list.length) lastChatSeen = list[list.length - 1].id;
+    if (!chatOpen) chatUnread += fresh.length;
+    chatMessages = list;
+    renderChat();
+  });
+}
+
+function iconButton(text, title, onclick) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chat-icon'; b.textContent = text; b.title = title; b.onclick = onclick;
+  return b;
+}
+
+function renderChat() {
+  const ul = $('chatList');
+  const nearBottom = ul.scrollHeight - ul.scrollTop - ul.clientHeight < 60;
+  ul.textContent = '';
+  chatVisible(chatMessages, chatBlocked).forEach(m => {
+    const li = document.createElement('li');
+    if (m.uid === myId) li.className = 'mine';
+    const name = document.createElement('b');
+    name.textContent = m.name;
+    li.append(name, ' ', document.createTextNode(m.text));
+    if (m.uid !== myId) li.appendChild(iconButton('🚫', `Hide ${m.name} (only for you)`, () => { chatBlocked.push(m.uid); saveBlocked(chatBlocked); renderChat(); }));
+    if (isHost && m.uid !== myId) li.appendChild(iconButton('🔇', `Mute ${m.name} for everyone`, () => net.setMuted(code, m.uid, true)));
+    if (isHost) li.appendChild(iconButton('🗑', 'Delete this message', () => net.deleteChatMessage(code, m.id)));
+    ul.appendChild(li);
+  });
+  if (nearBottom) ul.scrollTop = ul.scrollHeight;
+  $('chatBadge').textContent = chatUnread;
+  $('chatBadge').classList.toggle('hidden', chatUnread === 0 || chatOpen);
+}
+
+// Whether you can type right now (chat switched off, or you were muted), and the host's tools
+function renderChatState() {
+  if (!roomData || !roomData.meta) return;
+  const gate = chatAllowed(roomData.meta, roomData.muted, myId);
+  $('chatInput').disabled = !gate.ok;
+  $('chatSend').disabled = !gate.ok;
+  if (!gate.ok || Date.now() > chatNoticeUntil) $('chatHint').textContent = gate.ok ? CHAT_DEFAULT_HINT : gate.reason;
+  const tools = $('chatTools');
+  tools.textContent = '';
+  if (isHost) {
+    const on = roomData.meta.chat !== false;
+    const toggle = document.createElement('button');
+    toggle.type = 'button'; toggle.className = 'linkbtn'; toggle.textContent = on ? 'Turn chat off' : 'Turn chat on';
+    toggle.onclick = () => net.setChatOn(code, !on);
+    const clear = document.createElement('button');
+    clear.type = 'button'; clear.className = 'linkbtn'; clear.textContent = 'Clear';
+    clear.onclick = () => net.clearChat(code);
+    tools.append(toggle, clear);
+  }
+}
+
+async function sendChatMessage(e) {
+  e.preventDefault();
+  const text = cleanChatText($('chatInput').value);
+  if (!text) return;
+  const gate = chatAllowed(roomData.meta, roomData.muted, myId);
+  if (!gate.ok) { $('chatHint').textContent = gate.reason; return; }
+  const wait = chatCooldownLeft(lastChatSent);
+  if (wait > 0) { chatNotice('Slow down a little…', wait + 300); return; }
+  lastChatSent = Date.now();
+  $('chatInput').value = '';
+  try { await net.sendChat(code, myName, text); }
+  catch (err) { $('chatInput').value = text; chatNotice("That message wasn't sent. Try again in a moment.", 4000); }
+}
+
+// Show a short notice under the chat box, then go back to the usual line
+function chatNotice(text, ms) {
+  chatNoticeUntil = Date.now() + ms;
+  $('chatHint').textContent = text;
+  setTimeout(renderChatState, ms + 50);
+}
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  $('chatBox').classList.toggle('hidden', !chatOpen);
+  if (chatOpen) { chatUnread = 0; renderChat(); $('chatList').scrollTop = $('chatList').scrollHeight; $('chatInput').focus(); }
+  else renderChat();
+}
+
 // ---------- Wiring ----------
 $('btnAddBot').onclick = addLobbyBot;
 ['optChips', 'optBlinds', 'optTurn', 'optRising', 'optBots'].forEach(id => { $(id).onchange = optionChanged; });
@@ -599,6 +746,9 @@ $('btnStart').onclick = startGame;
 $('btnLeaveLobby').onclick = leaveLobby;
 $('btnLeaveGame').onclick = leaveGame;
 $('btnAgain').onclick = playAgain;
+$('btnSit').onclick = sitDown;
+$('chatToggle').onclick = toggleChat;
+$('chatForm').onsubmit = sendChatMessage;
 $('btnRebuy').onclick = () => { $('btnRebuy').classList.add('hidden'); net.sendAction(code, { seq: -1, type: 'rebuy' }); };
 $('btnCopyCode').onclick = () => copyText(code, $('btnCopyCode'));
 $('btnCopyLink').onclick = () => copyText(`${location.origin}${location.pathname}?code=${code}`, $('btnCopyLink'));

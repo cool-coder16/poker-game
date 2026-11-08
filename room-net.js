@@ -14,6 +14,10 @@
 //   arenas/<id>/tables/<code>  one arena table's running scores (the host writes them)
 //   tourneys/<code>/results  a finished tournament's final places (the host writes them)
 //   tourneyPlayed/<uid>/<code>  tournaments this player sat down in (only they can read or write it)
+//   rooms/<code>/watchers/<uid>  people watching without a seat (removed when they disconnect)
+//   rooms/<code>/muted/<uid>  people the host has muted in chat
+//   chat/<code>/<id>         chat messages (anyone signed in can read; the rules limit writes)
+//   chatLast/<code>/<uid>    when you last sent a message (the rules use it to allow one every 1.5 seconds)
 //   arenaPlayed/<uid>/<id>   Arenas this player sat down in (only they can read or write it): so the site knows which to total up
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I: easy to read out loud
@@ -178,6 +182,25 @@ function createRoomNet(store) {
     getArena: arenaId => store.get(`arenas/${arenaId}/tables`),
     watchArena: (arenaId, cb) => store.watch(`arenas/${arenaId}/tables`, all => cb(all || {})),
 
+    // Watching without a seat. Your name shows in the watcher count; it disappears when you leave or disconnect.
+    announceWatcher: (code, name) => store.keepPresent(`${room(code)}/watchers/${store.uid}`, { name }),
+    stopWatching: (code, uid = store.uid) => store.remove(`${room(code)}/watchers/${uid}`),
+
+    // Chat. A message and your "last sent" time are written together, so the rules can enforce the 1.5-second gap.
+    sendChat(code, name, text) {
+      const key = store.newKey(`chat/${code}`);
+      const now = store.serverTime();
+      return store.multiSet({
+        [`chat/${code}/${key}`]: { uid: store.uid, name, text, t: now },
+        [`chatLast/${code}/${store.uid}`]: now,
+      });
+    },
+    watchChat: (code, limit, cb) => store.watchList(`chat/${code}`, limit, cb),
+    deleteChatMessage: (code, id) => store.remove(`chat/${code}/${id}`),   // host only (by the rules)
+    clearChat: code => store.remove(`chat/${code}`),                        // host only
+    setMuted: (code, uid, on) => (on ? store.set(`${room(code)}/muted/${uid}`, true) : store.remove(`${room(code)}/muted/${uid}`)),
+    setChatOn: (code, on) => store.update(`${room(code)}/meta`, { chat: on }),
+
     // After a game: back to the lobby, with the old table thrown away (host only)
     async resetRoom(code) {
       await Promise.all([`${room(code)}/state`, `roomHost/${code}`, `roomActions/${code}`].map(p => store.remove(p)));
@@ -185,7 +208,7 @@ function createRoomNet(store) {
     },
 
     async deleteRoom(code) {
-      await Promise.all([room(code), `roomPrivate/${code}`, `roomActions/${code}`, `roomHost/${code}`].map(p => store.remove(p)));
+      await Promise.all([room(code), `roomPrivate/${code}`, `roomActions/${code}`, `roomHost/${code}`, `chat/${code}`, `chatLast/${code}`].map(p => store.remove(p)));
     },
   };
 }

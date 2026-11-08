@@ -22,6 +22,7 @@ rooms.html, tables.html,        the pages
 
 room-host.js                    the DEALER: runs a table, waits for moves, publishes the state
   engine.js                     the poker rules as a pure state machine (no screen, no network, tested)
+  chat.js                       chat rules: cleaning text, cooldown, who may talk (pure, tested)
   arena.js                      the Arena rules: windows, points, standings (pure, tested)
   tournament.js                 tournament rules: schedule, points, places, when to start (pure, tested)
   bots.js                       bot decisions
@@ -76,6 +77,24 @@ So when the dealer leaves, or disappears, another player can carry on from that 
 - **Single table only** (up to 8). Multi-table tournaments need something to move players between tables,
   which means a server.
 
+## Spectators and chat
+
+- **Watching:** anyone signed in can watch any table without a seat (`room.html?code=XXXXX&watch=1`, the "Watch"
+  links, or "Watch instead" on the join form). A full table, or a private game already under way, becomes a
+  watch automatically. Spectators never read anyone's hole cards (they are only readable by their owner), and they
+  can't move (the rules require a seat). Watchers show as "👁 N watching" (`rooms/<code>/watchers`, removed when
+  they disconnect). At an open or arena table a watcher can click "Sit down".
+- **Chat:** `chat/<code>/<id>`, shown in a panel in the corner of the room page, for players and spectators alike.
+  The database rules enforce: a message is 1 to 200 characters, from you (not someone else), stamped with the
+  server's clock, with at least 1.5 seconds since your last one (`chatLast/<code>/<uid>` is written in the same
+  update); nobody can edit a message; and the host can mute people (`rooms/<code>/muted`), switch chat off
+  (`meta.chat = false`), delete messages, or clear the lot. The page waits 2 seconds between messages so network
+  delays never trip the rule. Anyone can also hide a person for themselves (kept in this browser only).
+- **What chat does NOT have:** an automatic profanity/abuse filter. That would need a server or a paid
+  moderation service. For now moderation is the host's mute / delete / clear / off, plus personal hiding. If chat
+  gets rowdy, "Turn chat off" at your own tables is one click.
+- Messages are text only (the page never puts chat into HTML), so a message can't run code.
+
 ## Arena bots
 
 An arena table created from the Arena page has `fillBots`: when fewer than 3 humans are at the table, the dealer
@@ -99,7 +118,7 @@ round when humans arrive.
   read them (`roomPrivate/`). Arena standings run on the honor system until a server deals.
 - If the dealer vanishes and nobody else is at the table, the table is gone.
 - The free database allows about 100 players connected at once. Plenty for friends.
-- Not built yet: spectators, chat, multi-table tournaments, bots at open tables (by design).
+- Not built yet: multi-table tournaments, automatic chat filtering, bots at open tables (by design).
 - A scheduled tournament's room can be created by anyone who knows its code before the real first registrant, so
   on the honor system the creator becomes its dealer.
 
@@ -117,10 +136,12 @@ the code; a seated player may take over a dealer who is truly disconnected.
 node tests/engine.test.js     the poker rules (13 tests, including 3,000 random hands)
 node tests/arena.test.js      the Arena rules (windows, points, ties, standings, rating points)
 node tests/tournament.test.js the tournament rules (schedule, points, places, start/cancel)
-node tests/room.test.js       whole tables on the in-memory store (24 tests: privacy, timeouts, disconnects,
-                              dealer handoff, open tables, rebuys, arena rounds/ratings/bots, tournament places and ratings, the public list)
+node tests/chat.test.js       the chat rules (cleaning, cooldown, mute/off, hiding people)
+node tests/room.test.js       whole tables on the in-memory store (27 tests: privacy, timeouts, disconnects,
+                              dealer handoff, open tables, rebuys, arena rounds/ratings/bots, tournament places and ratings, chat, spectators, the public list)
 ```
 
 Try the table UI with no network or friends:
 `room.html?local` (private room), `room.html?local=open` (open table), `room.html?local=arena&rounds=3` (Arena,
-with 3-hand rounds so you see scoring quickly), `room.html?local=sng` (a 3-player Sit & Go). Each has two bots for company.
+with 3-hand rounds so you see scoring quickly), `room.html?local=sng` (a 3-player Sit & Go), `room.html?local=open&watch` (you
+watch a table that a pretend "Host" deals, and can chat with them). Each has two bots for company.

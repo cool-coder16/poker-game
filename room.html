@@ -108,6 +108,7 @@
         <div class="controls-top">
           <div class="myhand" id="myHand"></div>
           <button class="btn deal hidden" id="btnRebuy" type="button">Rebuy</button>
+          <button class="btn deal hidden" id="btnSit" type="button">Sit down</button>
         </div>
         <div class="actions">
           <button class="btn fold" id="btnFold" disabled>Fold</button>
@@ -146,6 +147,20 @@
     </aside>
   </main>
 
+  <!-- Table chat: a button in the corner that opens a small panel (shown once you are in a room) -->
+  <aside class="chat hidden" id="chat">
+    <div class="chat-box hidden" id="chatBox">
+      <div class="chat-head"><b>Table chat</b><span class="chat-tools" id="chatTools"></span></div>
+      <ul class="chat-list" id="chatList"></ul>
+      <form class="chat-form" id="chatForm">
+        <input id="chatInput" maxlength="200" autocomplete="off" placeholder="Say something nice…" aria-label="Chat message">
+        <button class="btn small" id="chatSend" type="submit">Send</button>
+      </form>
+      <p class="hint" id="chatHint"></p>
+    </div>
+    <button class="chat-toggle" id="chatToggle" type="button">💬 Chat <span class="chat-badge hidden" id="chatBadge">0</span></button>
+  </aside>
+
   <!-- Game over -->
   <dialog id="roomOver">
     <h2>Game over</h2>
@@ -167,6 +182,7 @@
   <script src="room-view.js"></script>
   <script src="store-memory.js"></script>
   <script src="room-net.js"></script>
+  <script src="chat.js"></script>
   <script src="arena.js"></script>
   <script src="tournament.js"></script>
   <script src="room-host.js"></script>

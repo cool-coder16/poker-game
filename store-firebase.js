@@ -7,6 +7,7 @@ import { getApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, runTransaction,
+  push, serverTimestamp, query, limitToLast,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 
 const app = getApp();
@@ -35,10 +36,22 @@ function makeStore(uid) {
     watch(path, cb) { return onValue(at(path), snap => cb(snap.val())); },
     // Mark this path as "here", and un-mark it if the connection drops. Done again after every
     // reconnect, because the server forgets our "on disconnect" instructions when the connection ends.
-    async keepPresent(path) {
+    async keepPresent(path, value = true) {
       const r = at(path);
       onValue(ref(db, '.info/connected'), snap => {
-        if (snap.val() === true) onDisconnect(r).remove().then(() => set(r, true));
+        if (snap.val() === true) onDisconnect(r).remove().then(() => set(r, plain(value)));
+      });
+    },
+    // Several writes in one go (paths are from the top of the database): all of them happen, or none
+    multiSet: updates => update(ref(db), plain(updates)),
+    newKey: path => push(ref(db, path)).key,     // a unique id that sorts by creation time
+    serverTime: () => serverTimestamp(),         // becomes the server's clock when written
+    // The last `limit` children of a path as [{ id, ...fields }], oldest first, kept up to date
+    watchList(path, limit, cb) {
+      return onValue(query(at(path), limitToLast(limit)), snap => {
+        const list = [];
+        snap.forEach(child => { list.push({ id: child.key, ...child.val() }); });
+        cb(list);
       });
     },
   };

@@ -67,7 +67,11 @@ function drawTables() {
     join.className = 'btn small' + (full ? ' disabled' : '');
     join.textContent = full ? 'Full' : 'Sit down';
     if (!full) join.href = `room.html?code=${e.code}`;
-    li.append(info, seats, join);
+    const watch = document.createElement('a');
+    watch.className = 'linkbtn';
+    watch.textContent = 'Watch';
+    watch.href = `room.html?code=${e.code}&watch=1`;
+    li.append(info, seats, watch, join);
     list.appendChild(li);
   });
 }

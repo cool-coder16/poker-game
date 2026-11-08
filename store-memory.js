@@ -10,13 +10,18 @@
 //   get(path) -> Promise<value|null>          set(path, value)       update(path, patch)
 //   remove(path)                              create(path, value) -> Promise<boolean>  (only if empty)
 //   watch(path, cb) -> unsubscribe            (cb gets the value at path now, and after every change under it)
-//   keepPresent(path)                         (set path to true now, and remove it if this user's connection drops)
+//   keepPresent(path, value = true)           (set path now, and remove it if this user's connection drops)
+//   multiSet({ path: value, ... })            (several writes at once: all happen or none do)
+//   newKey(path)                              (a new unique child name that sorts by time, like a message id)
+//   serverTime()                              (a value that means "the server's clock" when written)
+//   watchList(path, limit, cb)                (cb gets the last `limit` children as [{ id, ...fields }], oldest first)
 // A path looks like "rooms/ABCDE/state".
 
 function createMemoryHub() {
   let root = {};
   const watchers = new Set();
   const dropOnDisconnect = new Map();   // uid -> [paths]
+  let keyCounter = 0;
 
   // Mimic what the real database keeps: no nulls, no empty arrays/objects
   const prune = v => {
@@ -84,10 +89,23 @@ function createMemoryHub() {
         Promise.resolve().then(() => { if (watchers.has(w)) cb(snapshot); });
         return () => watchers.delete(w);
       },
-      async keepPresent(path) {
+      async keepPresent(path, value = true) {
         if (!dropOnDisconnect.has(uid)) dropOnDisconnect.set(uid, []);
         dropOnDisconnect.get(uid).push(path);
-        setAt(path, true); notify(path);
+        setAt(path, clone(value)); notify(path);
+      },
+      async multiSet(updates) {
+        Object.entries(updates).forEach(([path, value]) => setAt(path, clone(value)));
+        Object.keys(updates).forEach(notify);
+      },
+      newKey() {   // 9 digits of time + a counter, so keys sort in the order they were made
+        return Date.now().toString(36).padStart(9, '0') + (++keyCounter).toString(36).padStart(4, '0');
+      },
+      serverTime: () => Date.now(),
+      watchList(path, limit, cb) {
+        return this.watch(path, all => {
+          cb(Object.entries(all || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-limit).map(([id, v]) => ({ id, ...v })));
+        });
       },
     };
   }
